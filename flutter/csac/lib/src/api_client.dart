@@ -56,6 +56,42 @@ class EmailCodeResponse {
   }
 }
 
+class CsacUploadFile {
+  const CsacUploadFile({
+    required this.fieldName,
+    required this.bytes,
+    required this.fileName,
+  });
+
+  final String fieldName;
+  final Uint8List bytes;
+  final String fileName;
+}
+
+class HiddenConversationUpdate {
+  const HiddenConversationUpdate({
+    required this.isHidden,
+    required this.hiddenRoomIds,
+    required this.hasCompleteList,
+    this.message = '',
+  });
+
+  final bool isHidden;
+  final Set<int> hiddenRoomIds;
+  final bool hasCompleteList;
+  final String message;
+}
+
+class ConversationSyncResult {
+  const ConversationSyncResult({
+    required this.conversations,
+    required this.hiddenStateLoaded,
+  });
+
+  final List<Conversation> conversations;
+  final bool hiddenStateLoaded;
+}
+
 class NetworkDiagnosticReport {
   const NetworkDiagnosticReport({
     required this.serverUrl,
@@ -871,41 +907,87 @@ class CsacApiClient {
     });
   }
 
+  Future<Set<int>> hiddenConversationIds() async {
+    final data = await get('user/get_hide_conv_list');
+    return _hiddenRoomIdSet(data);
+  }
+
+  Future<HiddenConversationUpdate> toggleHiddenConversation(int roomId) async {
+    final data = await postForm('user/toggle_hide_conv', <String, String>{
+      'room_id': '$roomId',
+    });
+    final hiddenRoomIds = _hiddenRoomIdSet(data);
+    final hasCompleteList = _hasHiddenRoomIdList(data);
+    final nested = data['data'];
+    final nestedMap = nested is Map
+        ? Map<String, dynamic>.from(nested)
+        : const <String, dynamic>{};
+    var isHidden = hiddenRoomIds.contains(roomId);
+    if (data.containsKey('is_hidden') || data.containsKey('isHidden')) {
+      isHidden = asBool(data['is_hidden'] ?? data['isHidden']);
+    } else if (nestedMap.containsKey('is_hidden') ||
+        nestedMap.containsKey('isHidden')) {
+      isHidden = asBool(nestedMap['is_hidden'] ?? nestedMap['isHidden']);
+    }
+    return HiddenConversationUpdate(
+      isHidden: isHidden,
+      hiddenRoomIds: hiddenRoomIds,
+      hasCompleteList: hasCompleteList,
+      message: _message(data, ''),
+    );
+  }
+
   Future<List<Conversation>> conversations() async {
+    return (await syncConversationsWithMetadata()).conversations;
+  }
+
+  Future<ConversationSyncResult> syncConversationsWithMetadata() async {
     final results = await Future.wait<dynamic>(<Future<dynamic>>[
       friends(),
       groups(),
     ]);
     final friendsList = results[0] as List<Friend>;
     final groupsList = results[1] as List<Group>;
-    return <Conversation>[
-      for (final friend in friendsList)
-        Conversation(
-          type: ConversationType.private,
-          id: friend.id,
-          name: friend.name,
-          avatar: friend.avatar,
-          subtitle: friend.subtitle,
-          statusSubtitle: friend.statusSubtitle,
-          lastMessagePreview: friend.lastMessagePreview,
-          unreadCount: friend.unreadCount,
-          searchText: friend.searchText,
-          lastMessageAt: friend.lastMessageAt,
-        ),
-      for (final group in groupsList)
-        Conversation(
-          type: ConversationType.group,
-          id: group.id,
-          name: group.name,
-          avatar: group.avatar,
-          subtitle: group.subtitle,
-          statusSubtitle: group.statusSubtitle,
-          lastMessagePreview: group.lastMessagePreview,
-          unreadCount: group.unreadCount,
-          searchText: group.searchText,
-          lastMessageAt: group.lastMessageAt,
-        ),
-    ];
+    Set<int> hiddenRoomIds = const <int>{};
+    var hiddenStateLoaded = true;
+    try {
+      hiddenRoomIds = await hiddenConversationIds();
+    } catch (_) {
+      hiddenStateLoaded = false;
+      hiddenRoomIds = const <int>{};
+    }
+    return ConversationSyncResult(
+      conversations: <Conversation>[
+        for (final friend in friendsList)
+          Conversation(
+            type: ConversationType.private,
+            id: friend.id,
+            name: friend.name,
+            avatar: friend.avatar,
+            subtitle: friend.subtitle,
+            statusSubtitle: friend.statusSubtitle,
+            lastMessagePreview: friend.lastMessagePreview,
+            unreadCount: friend.unreadCount,
+            searchText: friend.searchText,
+            lastMessageAt: friend.lastMessageAt,
+          ),
+        for (final group in groupsList)
+          Conversation(
+            type: ConversationType.group,
+            id: group.id,
+            name: group.name,
+            avatar: group.avatar,
+            subtitle: group.subtitle,
+            statusSubtitle: group.statusSubtitle,
+            lastMessagePreview: group.lastMessagePreview,
+            unreadCount: group.unreadCount,
+            searchText: group.searchText,
+            lastMessageAt: group.lastMessageAt,
+            hidden: hiddenRoomIds.contains(group.id),
+          ),
+      ],
+      hiddenStateLoaded: hiddenStateLoaded,
+    );
   }
 
   Future<List<ChatMessage>> messages(
@@ -1098,6 +1180,55 @@ class CsacApiClient {
     return EssenceStats.fromJson(data, type: type);
   }
 
+  Future<SpacePostPage> spacePosts({int page = 1, int pageSize = 20}) async {
+    final data = await get('space/get_list', <String, String>{
+      'page': '${page < 1 ? 1 : page}',
+      'page_size': '${pageSize.clamp(1, 50)}',
+    });
+    return SpacePostPage.fromJson(_spaceResponseSource(data));
+  }
+
+  Future<int> sendSpacePost({
+    required String content,
+    required List<CsacUploadFile> images,
+  }) async {
+    final data = await _postSpaceMultipart(
+      'space/send',
+      fields: <String, String>{
+        if (content.trim().isNotEmpty) 'content': content.trim(),
+      },
+      images: images,
+    );
+    return _firstResponseInt(data, const ['cont_id', 'id']);
+  }
+
+  Future<int> replySpacePost(
+    int replyId, {
+    required String content,
+    required List<CsacUploadFile> images,
+  }) async {
+    final data = await _postSpaceMultipart(
+      'space/reply',
+      fields: <String, String>{
+        'reply_id': '$replyId',
+        if (content.trim().isNotEmpty) 'content': content.trim(),
+      },
+      images: images,
+    );
+    return _firstResponseInt(data, const ['cont_id', 'id']);
+  }
+
+  Future<SpaceLikeUpdate> toggleSpaceLike(int contId) async {
+    final data = await postForm('space/toggle_like', <String, String>{
+      'cont_id': '$contId',
+    });
+    return SpaceLikeUpdate.fromJson(data);
+  }
+
+  Future<void> deleteSpacePost(int contId) {
+    return postForm('space/delete', <String, String>{'cont_id': '$contId'});
+  }
+
   Future<Map<String, dynamic>> get(
     String route, [
     Map<String, String>? values,
@@ -1242,15 +1373,58 @@ class CsacApiClient {
     required Uint8List fileBytes,
     required String fileName,
   }) {
+    return postMultipartFiles(
+      route,
+      fields,
+      files: [
+        CsacUploadFile(
+          fieldName: fileField,
+          bytes: fileBytes,
+          fileName: fileName,
+        ),
+      ],
+    );
+  }
+
+  Future<Map<String, dynamic>> postMultipartFiles(
+    String route,
+    Map<String, String> fields, {
+    required List<CsacUploadFile> files,
+  }) {
     final uri = _routeUri(route);
     return _send(() {
       final request = http.MultipartRequest('POST', uri);
       request.fields.addAll(fields);
-      request.files.add(
-        http.MultipartFile.fromBytes(fileField, fileBytes, filename: fileName),
-      );
+      for (final file in files) {
+        request.files.add(
+          http.MultipartFile.fromBytes(
+            file.fieldName,
+            file.bytes,
+            filename: file.fileName,
+          ),
+        );
+      }
       return request;
     });
+  }
+
+  Future<Map<String, dynamic>> _postSpaceMultipart(
+    String route, {
+    required Map<String, String> fields,
+    required List<CsacUploadFile> images,
+  }) {
+    return postMultipartFiles(
+      route,
+      fields,
+      files: [
+        for (final image in images)
+          CsacUploadFile(
+            fieldName: 'images',
+            bytes: image.bytes,
+            fileName: image.fileName,
+          ),
+      ],
+    );
   }
 
   Map<String, String> _sendFields({
@@ -1559,6 +1733,88 @@ class CsacApiClient {
       }
     }
     return const <Map<String, dynamic>>[];
+  }
+
+  Map<String, dynamic> _spaceResponseSource(Map<String, dynamic> data) {
+    final nested = data['data'];
+    if (nested is Map) {
+      final mapped = Map<String, dynamic>.from(nested);
+      if (mapped['list'] is List) {
+        return <String, dynamic>{...data, ...mapped};
+      }
+    }
+    return data;
+  }
+
+  Set<int> _hiddenRoomIdSet(Map<String, dynamic> data) {
+    return _hiddenRoomIdValues(data).map(asInt).where((id) => id > 0).toSet();
+  }
+
+  List<Object?> _hiddenRoomIdValues(Map<String, dynamic> data) {
+    final direct = _firstScalarList(data, const [
+      'hide_conv_list',
+      'hidden_conv_list',
+      'hidden_conversations',
+    ]);
+    if (direct.isNotEmpty) {
+      return direct;
+    }
+    final nested = data['data'];
+    if (nested is List) {
+      return nested;
+    }
+    if (nested is Map) {
+      return _hiddenRoomIdValues(Map<String, dynamic>.from(nested));
+    }
+    return const <Object?>[];
+  }
+
+  bool _hasHiddenRoomIdList(Map<String, dynamic> data) {
+    if (_hasScalarList(data, const [
+      'hide_conv_list',
+      'hidden_conv_list',
+      'hidden_conversations',
+    ])) {
+      return true;
+    }
+    final nested = data['data'];
+    if (nested is List) {
+      return true;
+    }
+    if (nested is Map) {
+      return _hasHiddenRoomIdList(Map<String, dynamic>.from(nested));
+    }
+    return false;
+  }
+
+  List<Object?> _firstScalarList(Map<String, dynamic> data, List<String> keys) {
+    for (final key in keys) {
+      final value = data[key];
+      if (value is List) {
+        return value;
+      }
+      if (value is Map) {
+        final nested = _firstScalarList(Map<String, dynamic>.from(value), keys);
+        if (nested.isNotEmpty) {
+          return nested;
+        }
+      }
+    }
+    return const <Object?>[];
+  }
+
+  bool _hasScalarList(Map<String, dynamic> data, List<String> keys) {
+    for (final key in keys) {
+      final value = data[key];
+      if (value is List) {
+        return true;
+      }
+      if (value is Map &&
+          _hasScalarList(Map<String, dynamic>.from(value), keys)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   Map<String, dynamic>? _firstMap(

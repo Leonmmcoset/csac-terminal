@@ -112,6 +112,12 @@ Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Check: ShouldCr
 Name: "{group}\{cm:UninstallShortcut}"; Filename: "{uninstallexe}"; Check: ShouldCreateStartMenuShortcuts
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Check: ShouldCreateDesktopShortcut
 
+[Registry]
+Root: HKCU; Subkey: "Software\Classes\csacflutterleon"; ValueType: string; ValueName: ""; ValueData: "URL:CsAC deep link"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\csacflutterleon"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Classes\csacflutterleon\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#MyAppExeName},0"
+Root: HKCU; Subkey: "Software\Classes\csacflutterleon\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""
+
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram}"; Flags: nowait postinstall skipifsilent; Check: ShouldLaunchAfterInstall
 Filename: "{#MyAppURL}/releases/latest"; Description: "{cm:OpenReleases}"; Flags: shellexec nowait postinstall skipifsilent; Check: ShouldOpenReleasePage

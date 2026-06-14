@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:csac/src/api_client.dart';
+import 'package:csac/src/deep_links.dart';
 import 'package:csac/src/models.dart';
 import 'package:csac/src/update_checker.dart';
 
@@ -67,11 +68,11 @@ void main() {
   test('server URL accepts bare host and host with port', () {
     expect(
       CsacApiClient.normalizeServerUrl('192.168.1.10'),
-      'http://192.168.1.10/rpc/UniCsAC.php',
+      'https://192.168.1.10/rpc/UniCsAC.php',
     );
     expect(
       CsacApiClient.normalizeServerUrl('192.168.1.10:8080'),
-      'http://192.168.1.10:8080/rpc/UniCsAC.php',
+      'https://192.168.1.10:8080/rpc/UniCsAC.php',
     );
   });
 
@@ -84,6 +85,77 @@ void main() {
     );
 
     configureApiAssetBaseUrl(CsacApiClient.defaultBaseUrl);
+  });
+
+  test('space post parses image aliases and nested values', () {
+    configureApiAssetBaseUrl('http://example.com/rpc/UniCsAC.php');
+
+    final post = SpacePost.fromJson({
+      'cont_id': 1,
+      'sender_uid': 2,
+      'nickname': 'Leon',
+      'images': [
+        {'url': '/uploads/space/a.jpg'},
+        {'image_url': 'uploads/space/b.png'},
+      ],
+      'img_conts': '[{"src":"uploads/space/c.webp"},"/uploads/space/a.jpg"]',
+      'attachments': {
+        'data': [
+          {'path': 'uploads/space/d.gif'},
+        ],
+      },
+    });
+
+    expect(post.images, [
+      'http://example.com/uploads/space/c.webp',
+      'http://example.com/uploads/space/a.jpg',
+      'http://example.com/uploads/space/b.png',
+      'http://example.com/uploads/space/d.gif',
+    ]);
+
+    configureApiAssetBaseUrl(CsacApiClient.defaultBaseUrl);
+  });
+
+  test('space post parses delimited image strings', () {
+    configureApiAssetBaseUrl('http://example.com/rpc/UniCsAC.php');
+
+    final post = SpacePost.fromJson({
+      'cont_id': 1,
+      'sender_uid': 2,
+      'image_urls':
+          'uploads/space/a.jpg, /uploads/space/b.png|uploads/space/c.webp',
+    });
+
+    expect(post.images, [
+      'http://example.com/uploads/space/a.jpg',
+      'http://example.com/uploads/space/b.png',
+      'http://example.com/uploads/space/c.webp',
+    ]);
+
+    configureApiAssetBaseUrl(CsacApiClient.defaultBaseUrl);
+  });
+
+  test('deep links parse tab and chat aliases', () {
+    expect(
+      parseCsacDeepLink(Uri.parse('csacflutterleon://home')).action,
+      CsacDeepLinkAction.chats,
+    );
+    expect(
+      parseCsacDeepLink(Uri.parse('csacflutterleon://space')).action,
+      CsacDeepLinkAction.space,
+    );
+
+    final group = parseCsacDeepLink(
+      Uri.parse('csacflutterleon://chat/group/123'),
+    );
+    expect(group.action, CsacDeepLinkAction.groupChat);
+    expect(group.id, 123);
+
+    final private = parseCsacDeepLink(
+      Uri.parse('csacflutterleon://private/456'),
+    );
+    expect(private.action, CsacDeepLinkAction.privateChat);
+    expect(private.id, 456);
   });
 
   test('release version tags match app versions', () {

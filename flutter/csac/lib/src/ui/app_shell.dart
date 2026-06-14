@@ -113,7 +113,10 @@ class _CsacMobileAppState extends State<CsacMobileApp>
   );
   final scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
   final navigatorKey = GlobalKey<NavigatorState>();
+  final mainShellKey = GlobalKey<_MainShellState>();
   StreamSubscription<Conversation>? notificationTapSub;
+  StreamSubscription<Uri>? deepLinkSub;
+  Uri? pendingDeepLink;
   bool locked = false;
   bool wasBackgrounded = false;
   bool appLockSessionUnlocked = false;
@@ -143,6 +146,7 @@ class _CsacMobileAppState extends State<CsacMobileApp>
     backgroundRefreshChannel.setMethodCallHandler(handleBackgroundRefreshCall);
     unawaited(state.initialize());
     unawaited(localNotifications.initialize());
+    unawaited(initializeDeepLinks());
     notificationTapSub = localNotifications.taps.listen(openNotificationChat);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       maybeCheckForUpdatesOnStartup();
@@ -155,8 +159,76 @@ class _CsacMobileAppState extends State<CsacMobileApp>
     WidgetsBinding.instance.removeObserver(this);
     backgroundRefreshChannel.setMethodCallHandler(null);
     notificationTapSub?.cancel();
+    deepLinkSub?.cancel();
     updateChecker.close();
     super.dispose();
+  }
+
+  Future<void> initializeDeepLinks() async {
+    try {
+      final links = AppLinks();
+      final initial = await links.getInitialLink();
+      if (initial != null) {
+        handleDeepLink(initial);
+      }
+      deepLinkSub = links.uriLinkStream.listen(
+        handleDeepLink,
+        onError: (Object error) {
+          if (kDebugMode) {
+            debugPrint('CsAC deep link stream failed: $error');
+          }
+        },
+      );
+    } catch (error, stackTrace) {
+      if (kDebugMode) {
+        debugPrint('CsAC deep link initialization failed: $error');
+        debugPrintStack(stackTrace: stackTrace);
+      }
+    }
+  }
+
+  void handleDeepLink(Uri uri) {
+    if (!isCsacDeepLink(uri)) {
+      return;
+    }
+    pendingDeepLink = uri;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(consumePendingDeepLink());
+    });
+  }
+
+  Future<void> consumePendingDeepLink() async {
+    final uri = pendingDeepLink;
+    if (uri == null || state.bootstrapping) {
+      return;
+    }
+    final target = parseCsacDeepLink(uri);
+    if (!target.isSupported) {
+      pendingDeepLink = null;
+      showDeepLinkSnack('Unsupported CsAC link.');
+      return;
+    }
+    if (state.user == null || state.needsEmailVerification || locked) {
+      return;
+    }
+    final handled = await mainShellKey.currentState?.openDeepLinkTarget(target);
+    if (handled == null) {
+      return;
+    }
+    pendingDeepLink = null;
+    if (handled != true) {
+      showDeepLinkSnack('Unable to open CsAC link.');
+    }
+  }
+
+  void showDeepLinkSnack(String message) {
+    final context = navigatorKey.currentContext;
+    final strings = context == null
+        ? CsacStrings(localeForLanguage(state.preferences.language))
+        : CsacStrings.of(context);
+    scaffoldMessengerKey.currentState?.showSnackBar(
+      SnackBar(content: Text(strings.text(message))),
+    );
   }
 
   Future<void> openNotificationChat(Conversation tapped) async {
@@ -331,6 +403,15 @@ class _CsacMobileAppState extends State<CsacMobileApp>
   void handleStateChanged() {
     maybeCheckForUpdatesOnStartup();
     maybePrimeLocalNotificationPermission();
+    if (pendingDeepLink != null &&
+        !state.bootstrapping &&
+        state.user != null &&
+        !state.needsEmailVerification &&
+        !locked) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(consumePendingDeepLink());
+      });
+    }
     final userId = state.user?.uid ?? 0;
     if (userId != appLockUserId) {
       appLockUserId = userId;
@@ -456,6 +537,11 @@ class _CsacMobileAppState extends State<CsacMobileApp>
     appLockSessionUnlocked = true;
     appLockUserId = state.user?.uid ?? 0;
     setState(() => locked = false);
+    if (pendingDeepLink != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(consumePendingDeepLink());
+      });
+    }
   }
 
   @override
@@ -536,10 +622,7 @@ class _CsacMobileAppState extends State<CsacMobileApp>
                           key: const ValueKey<String>('login'),
                           state: state,
                         )
-                      : MainShell(
-                          key: const ValueKey<String>('main'),
-                          state: state,
-                        ),
+                      : MainShell(key: mainShellKey, state: state),
                 ),
                 if (locked && state.user != null)
                   Positioned.fill(
@@ -2101,9 +2184,7 @@ class LegalAgreementConsent extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     return Semantics(
       container: true,
-      label: strings.text(
-        'Agree to the Privacy Policy and User Agreement',
-      ),
+      label: strings.text('Agree to the Privacy Policy and User Agreement'),
       child: DecoratedBox(
         decoration: BoxDecoration(
           border: Border.all(color: colorScheme.outlineVariant),
@@ -2208,19 +2289,18 @@ class LegalDocumentScreen extends StatelessWidget {
               data: snapshot.data ?? '',
               selectable: true,
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
-              styleSheet: MarkdownStyleSheet.fromTheme(
-                Theme.of(context),
-              ).copyWith(
-                h1: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
-                h2: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-                p: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  height: 1.55,
-                ),
-              ),
+              styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context))
+                  .copyWith(
+                    h1: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                    h2: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                    p: Theme.of(
+                      context,
+                    ).textTheme.bodyMedium?.copyWith(height: 1.55),
+                  ),
             );
           },
         ),

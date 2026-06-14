@@ -692,6 +692,31 @@ class CsacAppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<HiddenConversationUpdate> toggleConversationHidden(
+    Conversation conversation,
+  ) async {
+    if (conversation.type != ConversationType.group) {
+      throw const CsacApiException('Only group chats can be hidden.');
+    }
+    final update = await client.toggleHiddenConversation(conversation.id);
+    final hiddenIds = update.hiddenRoomIds;
+    final updated = <Conversation>[
+      for (final item in conversations)
+        item.type == ConversationType.group &&
+                (update.hasCompleteList || item.id == conversation.id)
+            ? item.copyWith(
+                hidden: !update.hasCompleteList && item.id == conversation.id
+                    ? update.isHidden
+                    : hiddenIds.contains(item.id),
+              )
+            : item,
+    ];
+    conversations = _sortConversations(updated);
+    await cache.saveConversations(updated);
+    notifyListeners();
+    return update;
+  }
+
   Future<void> loadConversations() async {
     try {
       await syncConversations();
@@ -711,7 +736,8 @@ class CsacAppState extends ChangeNotifier {
   }
 
   Future<void> syncConversations() async {
-    final loaded = await client.conversations();
+    final syncResult = await client.syncConversationsWithMetadata();
+    final loaded = syncResult.conversations;
     final cachedActivity = await cache.loadConversationActivity();
     final cachedConversations = {
       for (final conversation in await cache.loadConversations())
@@ -723,6 +749,7 @@ class CsacAppState extends ChangeNotifier {
           final conversation = _mergeConversationDisplay(
             cachedConversations['${entry.$2.type.name}:${entry.$2.id}'],
             entry.$2.copyWith(displayOrder: entry.$1),
+            preserveCachedHidden: !syncResult.hiddenStateLoaded,
           );
           final cached =
               cachedActivity['${conversation.type.name}:${conversation.id}'] ??
@@ -784,8 +811,9 @@ class CsacAppState extends ChangeNotifier {
 
   Conversation _mergeConversationDisplay(
     Conversation? cached,
-    Conversation loaded,
-  ) {
+    Conversation loaded, {
+    bool preserveCachedHidden = false,
+  }) {
     if (cached == null) {
       return loaded;
     }
@@ -801,6 +829,7 @@ class CsacAppState extends ChangeNotifier {
       lastMessagePreview: loaded.lastMessagePreview.trim().isEmpty
           ? cached.lastMessagePreview
           : loaded.lastMessagePreview,
+      hidden: preserveCachedHidden ? cached.hidden : loaded.hidden,
     );
   }
 

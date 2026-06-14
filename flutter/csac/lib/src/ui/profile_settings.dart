@@ -1979,10 +1979,25 @@ const apiDocEndpoints = <ApiDocEndpoint>[
     route: 'auth/login',
     method: ApiDocMethod.post,
     summary: 'Login',
-    description: 'Log in with username and password.',
+    description: 'Log in with username, password and client platform id.',
     params: [
       ApiDocParam(name: 'username', description: 'Username', required: true),
       ApiDocParam(name: 'pwd', description: 'Password', required: true),
+      ApiDocParam(
+        name: 'platform',
+        description: 'Client platform id, for example flutter-leon-1.0.0',
+        required: true,
+      ),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Auth',
+    route: 'auth/send_register_code',
+    method: ApiDocMethod.post,
+    summary: 'Send register code',
+    description: 'Send a 6-digit email verification code before registration.',
+    params: [
+      ApiDocParam(name: 'email', description: 'Email address', required: true),
     ],
   ),
   ApiDocEndpoint(
@@ -1990,14 +2005,48 @@ const apiDocEndpoints = <ApiDocEndpoint>[
     route: 'auth/register',
     method: ApiDocMethod.post,
     summary: 'Register account',
-    description: 'Create a new user account.',
+    description:
+        'Create a new user account after email verification. Avatar uses multipart file field avatar.',
     params: [
       ApiDocParam(name: 'username', description: 'Username', required: true),
       ApiDocParam(name: 'nickname', description: 'Nickname', required: true),
+      ApiDocParam(name: 'email', description: 'Email address', required: true),
+      ApiDocParam(
+        name: 'email_code',
+        description: '6-digit email verification code',
+        required: true,
+      ),
       ApiDocParam(name: 'pwd', description: 'Password', required: true),
       ApiDocParam(
         name: 'confirm_pwd',
         description: 'Confirm password',
+        required: true,
+      ),
+      ApiDocParam(name: 'avatar', description: 'Multipart avatar file'),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Auth',
+    route: 'auth/send_email_bind_code',
+    method: ApiDocMethod.post,
+    summary: 'Send email bind code',
+    description: 'Send a 6-digit code for old accounts that must bind email.',
+    params: [
+      ApiDocParam(name: 'email', description: 'Email address', required: true),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Auth',
+    route: 'auth/verify_email_bind_code',
+    method: ApiDocMethod.post,
+    summary: 'Verify email bind code',
+    description:
+        'Bind email for an already logged-in old account. Keep the same session cookie.',
+    params: [
+      ApiDocParam(name: 'email', description: 'Email address', required: true),
+      ApiDocParam(
+        name: 'email_code',
+        description: '6-digit email verification code',
         required: true,
       ),
     ],
@@ -2022,17 +2071,23 @@ const apiDocEndpoints = <ApiDocEndpoint>[
     route: 'user/update_profile',
     method: ApiDocMethod.post,
     summary: 'Update profile',
-    description: 'Update nickname, privacy, pat action or profile fields.',
+    description:
+        'Update nickname, password, avatar, privacy, pat action or profile fields.',
     params: [
       ApiDocParam(
         name: 'action',
-        description: 'nickname / privacy / pat_action',
+        description: 'nickname / password / avatar / privacy / pat_action',
         required: true,
         example: 'nickname',
       ),
       ApiDocParam(name: 'nickname', description: 'New nickname'),
       ApiDocParam(name: 'pat_action', description: 'Pat action text'),
+      ApiDocParam(name: 'value', description: 'Alias value for action updates'),
       ApiDocParam(name: 'allow_auto_join', description: '0 or 1'),
+      ApiDocParam(name: 'old_password', description: 'Current password'),
+      ApiDocParam(name: 'new_password', description: 'New password'),
+      ApiDocParam(name: 'confirm_password', description: 'Confirm password'),
+      ApiDocParam(name: 'avatar', description: 'Multipart avatar file'),
     ],
   ),
   ApiDocEndpoint(
@@ -2045,8 +2100,7 @@ const apiDocEndpoints = <ApiDocEndpoint>[
     params: [
       ApiDocParam(
         name: 'old_password',
-        description: 'Current password',
-        required: true,
+        description: 'Current password, optional for legacy upgrade flow',
       ),
       ApiDocParam(
         name: 'new_password',
@@ -2080,6 +2134,27 @@ const apiDocEndpoints = <ApiDocEndpoint>[
     method: ApiDocMethod.get,
     summary: 'Joined groups',
     description: 'Return groups joined by current user.',
+  ),
+  ApiDocEndpoint(
+    group: 'User',
+    route: 'user/get_hide_conv_list',
+    method: ApiDocMethod.get,
+    summary: 'Hidden conversations',
+    description: 'Return hidden group room IDs for the current user.',
+  ),
+  ApiDocEndpoint(
+    group: 'User',
+    route: 'user/toggle_hide_conv',
+    method: ApiDocMethod.post,
+    summary: 'Toggle hidden conversation',
+    description: 'Hide a group conversation or restore it when already hidden.',
+    params: [
+      ApiDocParam(
+        name: 'room_id',
+        description: 'Group room ID',
+        required: true,
+      ),
+    ],
   ),
   ApiDocEndpoint(
     group: 'User',
@@ -2123,7 +2198,8 @@ const apiDocEndpoints = <ApiDocEndpoint>[
     summary: 'Send friend request',
     description: 'Request to add a user as friend.',
     params: [
-      ApiDocParam(name: 'friend_id', description: 'Target UID', required: true),
+      ApiDocParam(name: 'to_uid', description: 'Target UID', required: true),
+      ApiDocParam(name: 'friend_id', description: 'Legacy alias for to_uid'),
       ApiDocParam(name: 'message', description: 'Request message'),
     ],
   ),
@@ -2141,7 +2217,7 @@ const apiDocEndpoints = <ApiDocEndpoint>[
       ),
       ApiDocParam(
         name: 'action',
-        description: 'agree or reject',
+        description: 'agree or refuse',
         required: true,
         example: 'agree',
       ),
@@ -2233,6 +2309,7 @@ const apiDocEndpoints = <ApiDocEndpoint>[
         description: 'Group room ID',
         required: true,
       ),
+      ApiDocParam(name: 'rid', description: 'Legacy alias for room_id'),
     ],
   ),
   ApiDocEndpoint(
@@ -2247,6 +2324,7 @@ const apiDocEndpoints = <ApiDocEndpoint>[
         description: 'Group room ID',
         required: true,
       ),
+      ApiDocParam(name: 'rid', description: 'Legacy alias for room_id'),
     ],
   ),
   ApiDocEndpoint(
@@ -2261,6 +2339,7 @@ const apiDocEndpoints = <ApiDocEndpoint>[
         description: 'Group room ID',
         required: true,
       ),
+      ApiDocParam(name: 'rid', description: 'Legacy alias for room_id'),
     ],
   ),
   ApiDocEndpoint(
@@ -2286,6 +2365,7 @@ const apiDocEndpoints = <ApiDocEndpoint>[
         description: 'Group room ID',
         required: true,
       ),
+      ApiDocParam(name: 'rid', description: 'Legacy alias for room_id'),
       ApiDocParam(name: 'code', description: 'Invite code if required'),
       ApiDocParam(name: 'answer', description: 'Join question answer'),
     ],
@@ -2322,11 +2402,13 @@ const apiDocEndpoints = <ApiDocEndpoint>[
         description: 'Group room ID',
         required: true,
       ),
+      ApiDocParam(name: 'rid', description: 'Legacy alias for room_id'),
       ApiDocParam(
         name: 'target_uid',
         description: 'Target UID',
         required: true,
       ),
+      ApiDocParam(name: 'uid', description: 'Legacy alias for target_uid'),
     ],
   ),
   ApiDocEndpoint(
@@ -2335,7 +2417,7 @@ const apiDocEndpoints = <ApiDocEndpoint>[
     method: ApiDocMethod.post,
     summary: 'Edit group info',
     description:
-        'Update group name, intro, notice or avatar URL. File avatar upload is not supported by this debugger.',
+        'Update group name, intro, notice or avatar. Avatar uses multipart file field avatar.',
     params: [
       ApiDocParam(
         name: 'room_id',
@@ -2351,7 +2433,10 @@ const apiDocEndpoints = <ApiDocEndpoint>[
       ApiDocParam(name: 'room_name', description: 'Group name'),
       ApiDocParam(name: 'intro', description: 'Group intro'),
       ApiDocParam(name: 'notice', description: 'Group notice'),
-      ApiDocParam(name: 'avatar', description: 'Avatar URL'),
+      ApiDocParam(
+        name: 'avatar',
+        description: 'Avatar URL or multipart avatar file field',
+      ),
     ],
   ),
   ApiDocEndpoint(
@@ -2405,6 +2490,10 @@ const apiDocEndpoints = <ApiDocEndpoint>[
         description: 'New owner UID',
         required: true,
       ),
+      ApiDocParam(
+        name: 'new_owner_uid',
+        description: 'Legacy alias for target_uid',
+      ),
     ],
   ),
   ApiDocEndpoint(
@@ -2433,6 +2522,7 @@ const apiDocEndpoints = <ApiDocEndpoint>[
         description: 'Group room ID',
         required: true,
       ),
+      ApiDocParam(name: 'rid', description: 'Legacy alias for room_id'),
     ],
   ),
   ApiDocEndpoint(
@@ -2517,11 +2607,13 @@ const apiDocEndpoints = <ApiDocEndpoint>[
         description: 'Group room ID',
         required: true,
       ),
+      ApiDocParam(name: 'rid', description: 'Legacy alias for room_id'),
       ApiDocParam(
         name: 'target_uid',
         description: 'Target UID',
         required: true,
       ),
+      ApiDocParam(name: 'uid', description: 'Legacy alias for target_uid'),
       ApiDocParam(name: 'title', description: 'Member title'),
       ApiDocParam(name: 'level', description: 'Member level 1-100'),
     ],
@@ -2538,6 +2630,25 @@ const apiDocEndpoints = <ApiDocEndpoint>[
         description: 'Group room ID',
         required: true,
       ),
+      ApiDocParam(name: 'rid', description: 'Legacy alias for room_id'),
+      ApiDocParam(name: 'before_id', description: 'Load messages before ID'),
+      ApiDocParam(name: 'after_id', description: 'Load messages after ID'),
+      ApiDocParam(name: 'limit', description: '20-200', example: '80'),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Message',
+    route: 'group/get_group_msg',
+    method: ApiDocMethod.get,
+    summary: 'Group messages alias',
+    description: 'Alias of message/get_group_msg.',
+    params: [
+      ApiDocParam(
+        name: 'room_id',
+        description: 'Group room ID',
+        required: true,
+      ),
+      ApiDocParam(name: 'rid', description: 'Legacy alias for room_id'),
       ApiDocParam(name: 'before_id', description: 'Load messages before ID'),
       ApiDocParam(name: 'after_id', description: 'Load messages after ID'),
       ApiDocParam(name: 'limit', description: '20-200', example: '80'),
@@ -2563,7 +2674,7 @@ const apiDocEndpoints = <ApiDocEndpoint>[
     method: ApiDocMethod.post,
     summary: 'Send group message',
     description:
-        'Send a text message to a group. File upload is not supported by this debugger.',
+        'Send a text or image message to a group. Image uses multipart file field img.',
     params: [
       ApiDocParam(
         name: 'room_id',
@@ -2573,6 +2684,7 @@ const apiDocEndpoints = <ApiDocEndpoint>[
       ApiDocParam(name: 'content', description: 'Message text', required: true),
       ApiDocParam(name: 'reply_to', description: 'Reply message ID'),
       ApiDocParam(name: 'mention_uids', description: 'Comma separated UIDs'),
+      ApiDocParam(name: 'img', description: 'Multipart image file'),
     ],
   ),
   ApiDocEndpoint(
@@ -2581,11 +2693,12 @@ const apiDocEndpoints = <ApiDocEndpoint>[
     method: ApiDocMethod.post,
     summary: 'Send private message',
     description:
-        'Send a text message to a friend. File upload is not supported by this debugger.',
+        'Send a text or image message to a friend. Image uses multipart file field img.',
     params: [
       ApiDocParam(name: 'friend_id', description: 'Friend UID', required: true),
       ApiDocParam(name: 'content', description: 'Message text', required: true),
       ApiDocParam(name: 'reply_to', description: 'Reply message ID'),
+      ApiDocParam(name: 'img', description: 'Multipart image file'),
     ],
   ),
   ApiDocEndpoint(
@@ -2593,13 +2706,36 @@ const apiDocEndpoints = <ApiDocEndpoint>[
     route: 'message/send_voice_msg',
     method: ApiDocMethod.post,
     summary: 'Send voice message',
-    description:
-        'Send a voice message. File upload is not supported by this debugger.',
+    description: 'Send a voice message. Voice uses multipart file field voice.',
     params: [
       ApiDocParam(name: 'room_id', description: 'Group room ID'),
       ApiDocParam(name: 'friend_id', description: 'Private friend UID'),
       ApiDocParam(name: 'duration', description: 'Duration in seconds'),
+      ApiDocParam(name: 'voice', description: 'Multipart voice file'),
     ],
+  ),
+  ApiDocEndpoint(
+    group: 'Message',
+    route: 'message/send_emoji_msg',
+    method: ApiDocMethod.post,
+    summary: 'Send emoji message',
+    description: 'Send a sticker/emoji message to a group or private chat.',
+    params: [
+      ApiDocParam(name: 'room_id', description: 'Group room ID'),
+      ApiDocParam(name: 'friend_id', description: 'Private friend UID'),
+      ApiDocParam(
+        name: 'abbr',
+        description: 'Emoji abbreviation',
+        required: true,
+      ),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Emoji',
+    route: 'emoji/get_list',
+    method: ApiDocMethod.get,
+    summary: 'Emoji list',
+    description: 'Return available sticker/emoji metadata.',
   ),
   ApiDocEndpoint(
     group: 'Message',
@@ -2630,6 +2766,29 @@ const apiDocEndpoints = <ApiDocEndpoint>[
         description: 'Target UID',
         required: true,
       ),
+      ApiDocParam(name: 'rid', description: 'Legacy alias for room_id'),
+      ApiDocParam(name: 'uid', description: 'Legacy alias for target_uid'),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Message',
+    route: 'message/pat',
+    method: ApiDocMethod.post,
+    summary: 'Send pat alias',
+    description: 'Alias of message/send_pat_msg.',
+    params: [
+      ApiDocParam(
+        name: 'room_id',
+        description: 'Group room ID',
+        required: true,
+      ),
+      ApiDocParam(
+        name: 'target_uid',
+        description: 'Target UID',
+        required: true,
+      ),
+      ApiDocParam(name: 'rid', description: 'Legacy alias for room_id'),
+      ApiDocParam(name: 'uid', description: 'Legacy alias for target_uid'),
     ],
   ),
   ApiDocEndpoint(
@@ -2651,6 +2810,80 @@ const apiDocEndpoints = <ApiDocEndpoint>[
     summary: 'Mention counters',
     description:
         'Return group mention and reply counters for the current user.',
+  ),
+  ApiDocEndpoint(
+    group: 'Space',
+    route: 'space/get_list',
+    method: ApiDocMethod.get,
+    summary: 'Space feed',
+    description:
+        'List main space posts from the current user and friends. Each item includes replies.',
+    params: [
+      ApiDocParam(name: 'page', description: 'Page number, default 1'),
+      ApiDocParam(
+        name: 'page_size',
+        description: 'Items per page, default 20, max 50',
+      ),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Space',
+    route: 'space/send',
+    method: ApiDocMethod.post,
+    summary: 'Publish space post',
+    description:
+        'Publish a space post. Multipart file field images supports up to 9 images, 5 MB each.',
+    params: [
+      ApiDocParam(name: 'content', description: 'Text content'),
+      ApiDocParam(name: 'images', description: 'Multipart image file field'),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Space',
+    route: 'space/reply',
+    method: ApiDocMethod.post,
+    summary: 'Reply to space post',
+    description:
+        'Reply to a space post. Multipart file field images follows the same image rules.',
+    params: [
+      ApiDocParam(
+        name: 'reply_id',
+        description: 'Target space post ID',
+        required: true,
+      ),
+      ApiDocParam(name: 'content', description: 'Reply text content'),
+      ApiDocParam(name: 'images', description: 'Multipart image file field'),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Space',
+    route: 'space/toggle_like',
+    method: ApiDocMethod.post,
+    summary: 'Toggle space like',
+    description:
+        'Like or unlike a space post, returning is_liked and likes_num.',
+    params: [
+      ApiDocParam(
+        name: 'cont_id',
+        description: 'Space post ID',
+        required: true,
+      ),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Space',
+    route: 'space/delete',
+    method: ApiDocMethod.post,
+    summary: 'Delete space post',
+    description:
+        'Delete a post owned by the current user. Deleting a main post also deletes its replies.',
+    params: [
+      ApiDocParam(
+        name: 'cont_id',
+        description: 'Space post ID',
+        required: true,
+      ),
+    ],
   ),
   ApiDocEndpoint(
     group: 'Essence',
@@ -2786,6 +3019,31 @@ const apiDocEndpoints = <ApiDocEndpoint>[
     ],
   ),
   ApiDocEndpoint(
+    group: 'Utility',
+    route: 'utils/session_extend',
+    method: ApiDocMethod.post,
+    summary: 'Extend privileged session',
+    description:
+        'Activate temporary session extension with the server cache key. Internal/admin use only.',
+    params: [
+      ApiDocParam(name: 'key', description: 'Server cache key', required: true),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Utility',
+    route: 'utils/session_reset',
+    method: ApiDocMethod.post,
+    summary: 'Reset session extension',
+    description: 'Clear temporary session extension state.',
+  ),
+  ApiDocEndpoint(
+    group: 'Utility',
+    route: 'utils/session_info',
+    method: ApiDocMethod.get,
+    summary: 'Session extension info',
+    description: 'Return whether temporary session extension is active.',
+  ),
+  ApiDocEndpoint(
     group: 'Feedback',
     route: 'bug_report',
     method: ApiDocMethod.post,
@@ -2808,6 +3066,302 @@ const apiDocEndpoints = <ApiDocEndpoint>[
     description: 'Simple API/database health check.',
   ),
 ];
+
+class _UrlSchemeDocEntry {
+  const _UrlSchemeDocEntry({
+    required this.titleKey,
+    required this.descriptionKey,
+    required this.examples,
+  });
+
+  final String titleKey;
+  final String descriptionKey;
+  final List<String> examples;
+}
+
+const _urlSchemeDocEntries = <_UrlSchemeDocEntry>[
+  _UrlSchemeDocEntry(
+    titleKey: 'Open chat list',
+    descriptionKey: 'Opens the main conversation list.',
+    examples: [
+      '$csacDeepLinkScheme://home',
+      '$csacDeepLinkScheme://chats',
+      '$csacDeepLinkScheme://chatlist',
+    ],
+  ),
+  _UrlSchemeDocEntry(
+    titleKey: 'Open space',
+    descriptionKey: 'Opens the space and dynamic feed page.',
+    examples: [
+      '$csacDeepLinkScheme://space',
+      '$csacDeepLinkScheme://discover',
+      '$csacDeepLinkScheme://feed',
+    ],
+  ),
+  _UrlSchemeDocEntry(
+    titleKey: 'Open search',
+    descriptionKey: 'Opens the global search page.',
+    examples: ['$csacDeepLinkScheme://search'],
+  ),
+  _UrlSchemeDocEntry(
+    titleKey: 'Open notices',
+    descriptionKey: 'Opens the notifications page.',
+    examples: ['$csacDeepLinkScheme://notices'],
+  ),
+  _UrlSchemeDocEntry(
+    titleKey: 'Open profile and settings',
+    descriptionKey: 'Opens the Me tab and settings area.',
+    examples: [
+      '$csacDeepLinkScheme://me',
+      '$csacDeepLinkScheme://profile',
+      '$csacDeepLinkScheme://settings',
+    ],
+  ),
+  _UrlSchemeDocEntry(
+    titleKey: 'Open group chat',
+    descriptionKey: 'Replace {id} with the group room ID.',
+    examples: [
+      '$csacDeepLinkScheme://chat/group/{id}',
+      '$csacDeepLinkScheme://group/{id}',
+      '$csacDeepLinkScheme://room/{id}',
+    ],
+  ),
+  _UrlSchemeDocEntry(
+    titleKey: 'Open private chat',
+    descriptionKey: 'Replace {id} with the friend UID.',
+    examples: [
+      '$csacDeepLinkScheme://chat/private/{id}',
+      '$csacDeepLinkScheme://private/{id}',
+      '$csacDeepLinkScheme://friend/{id}',
+      '$csacDeepLinkScheme://user/{id}',
+    ],
+  ),
+];
+
+class UrlSchemeDocsScreen extends StatelessWidget {
+  const UrlSchemeDocsScreen({super.key});
+
+  Future<void> copyUrl(BuildContext context, String value) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final copiedText = context.strings.text('URL scheme example copied.');
+    await Clipboard.setData(ClipboardData(text: value));
+    if (context.mounted) {
+      messenger.showSnackBar(SnackBar(content: Text(copiedText)));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    final colors = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: AppBar(title: Text(strings.text('URL scheme documentation'))),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+          children: [
+            Card(
+              elevation: 0,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.link_outlined, color: colors.primary),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '$csacDeepLinkScheme://',
+                            style: Theme.of(context).textTheme.titleLarge
+                                ?.copyWith(fontWeight: FontWeight.w800),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            strings.text(
+                              'Use these links to open CsAC pages directly.',
+                            ),
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(color: colors.onSurfaceVariant),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: strings.text('Copy'),
+                      onPressed: () =>
+                          copyUrl(context, '$csacDeepLinkScheme://home'),
+                      icon: const Icon(Icons.copy),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Card(
+              elevation: 0,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+                    child: Row(
+                      children: [
+                        Icon(Icons.route_outlined, color: colors.primary),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            strings.text('Supported URL scheme aliases'),
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  for (final entry in _urlSchemeDocEntries) ...[
+                    const Divider(height: 1),
+                    _UrlSchemeDocTile(entry: entry, onCopy: copyUrl),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Card(
+              elevation: 0,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.info_outline, color: colors.primary),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        strings.text(
+                          'Chat links require an existing logged-in session. If the conversation is not in local data, CsAC will refresh conversations before opening it.',
+                        ),
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _UrlSchemeDocTile extends StatelessWidget {
+  const _UrlSchemeDocTile({required this.entry, required this.onCopy});
+
+  final _UrlSchemeDocEntry entry;
+  final Future<void> Function(BuildContext context, String value) onCopy;
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  strings.text(entry.titleKey),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  strings.text(entry.descriptionKey),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Column(
+                  children: [
+                    for (final example in entry.examples)
+                      _UrlSchemeExampleRow(
+                        example: example,
+                        onCopy: () => onCopy(context, example),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: strings.text('Copy'),
+            onPressed: () => onCopy(context, entry.examples.first),
+            icon: const Icon(Icons.copy),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _UrlSchemeExampleRow extends StatelessWidget {
+  const _UrlSchemeExampleRow({required this.example, required this.onCopy});
+
+  final String example;
+  final VoidCallback onCopy;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: colors.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: onCopy,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+            child: Row(
+              children: [
+                Icon(Icons.link, size: 18, color: colors.onSurfaceVariant),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    example,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontFamily: 'monospace',
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: context.strings.text('Copy'),
+                  onPressed: onCopy,
+                  icon: const Icon(Icons.copy, size: 18),
+                  visualDensity: VisualDensity.compact,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class ApiExplorerScreen extends StatefulWidget {
   const ApiExplorerScreen({super.key, required this.state});
@@ -5098,6 +5652,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'HTTP/2',
       'API explorer',
       'API documentation',
+      'URL scheme documentation',
+      'Supported URL scheme aliases',
       'Run online',
       'Endpoint',
       'Route',
@@ -5921,6 +6477,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             MaterialPageRoute<void>(
                               builder: (_) =>
                                   ApiExplorerScreen(state: widget.state),
+                            ),
+                          );
+                        },
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.link_outlined),
+                        title: Text(strings.text('URL scheme documentation')),
+                        subtitle: Text(
+                          strings.text(
+                            'View CsAC URL scheme aliases and examples',
+                          ),
+                        ),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const UrlSchemeDocsScreen(),
                             ),
                           );
                         },

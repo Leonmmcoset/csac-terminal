@@ -188,6 +188,93 @@ class _MainShellState extends State<MainShell> {
     super.dispose();
   }
 
+  void selectDestination(int value) {
+    setState(() => index = value);
+    if (value == 0) {
+      unawaited(widget.state.loadConversations());
+    }
+    if (value == 3) {
+      unawaited(widget.state.refreshNotificationCounts());
+    }
+  }
+
+  Future<bool> openDeepLinkTarget(CsacDeepLinkTarget target) async {
+    switch (target.action) {
+      case CsacDeepLinkAction.chats:
+        return openDeepLinkTab(0);
+      case CsacDeepLinkAction.space:
+        return openDeepLinkTab(1);
+      case CsacDeepLinkAction.search:
+        return openDeepLinkTab(2);
+      case CsacDeepLinkAction.notices:
+        return openDeepLinkTab(3);
+      case CsacDeepLinkAction.profile:
+        return openDeepLinkTab(4);
+      case CsacDeepLinkAction.groupChat:
+        return openDeepLinkChat(ConversationType.group, target.id ?? 0);
+      case CsacDeepLinkAction.privateChat:
+        return openDeepLinkChat(ConversationType.private, target.id ?? 0);
+      case CsacDeepLinkAction.unsupported:
+        return false;
+    }
+  }
+
+  bool openDeepLinkTab(int value) {
+    if (value < 0 || value > 4) {
+      return false;
+    }
+    Navigator.of(context).popUntil((route) => route.isFirst);
+    selectDestination(value);
+    return true;
+  }
+
+  Future<bool> openDeepLinkChat(ConversationType type, int id) async {
+    if (id <= 0) {
+      return false;
+    }
+    var conversation = findConversation(type, id);
+    if (conversation == null) {
+      try {
+        await widget.state.loadConversations();
+      } catch (_) {
+        return false;
+      }
+      if (!mounted) {
+        return false;
+      }
+      conversation = findConversation(type, id);
+    }
+    if (conversation == null) {
+      return false;
+    }
+
+    Navigator.of(context).popUntil((route) => route.isFirst);
+    final opened = conversation.copyWith(unreadCount: 0);
+    unawaited(widget.state.markConversationRead(conversation));
+    widget.state.setActiveConversation(opened);
+    selectDestination(0);
+    final wide = MediaQuery.sizeOf(context).width >= 900;
+    if (wide) {
+      setState(() => selectedConversation = opened);
+      lastUnreadChats = totalUnreadChats();
+      return true;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ChatScreen(state: widget.state, conversation: opened),
+      ),
+    );
+    return true;
+  }
+
+  Conversation? findConversation(ConversationType type, int id) {
+    return widget.state.conversations
+        .where(
+          (conversation) => conversation.type == type && conversation.id == id,
+        )
+        .firstOrNull;
+  }
+
   @override
   Widget build(BuildContext context) {
     final unreadChats = totalUnreadChats();
@@ -211,6 +298,7 @@ class _MainShellState extends State<MainShell> {
               }
             : null,
       ),
+      SpaceFeedScreen(state: widget.state, embedded: true),
       MessageSearchScreen(state: widget.state, embedded: true),
       NoticeCenterScreen(state: widget.state),
       ProfileScreen(state: widget.state),
@@ -223,15 +311,7 @@ class _MainShellState extends State<MainShell> {
             children: [
               NavigationRail(
                 selectedIndex: index,
-                onDestinationSelected: (value) {
-                  setState(() => index = value);
-                  if (value == 0) {
-                    widget.state.loadConversations();
-                  }
-                  if (value == 2) {
-                    widget.state.refreshNotificationCounts();
-                  }
-                },
+                onDestinationSelected: selectDestination,
                 labelType: NavigationRailLabelType.all,
                 leading: Padding(
                   padding: const EdgeInsets.only(top: 12, bottom: 18),
@@ -251,6 +331,11 @@ class _MainShellState extends State<MainShell> {
                       count: unreadChats,
                     ),
                     label: Text(context.strings.text('Chats')),
+                  ),
+                  NavigationRailDestination(
+                    icon: const Icon(Icons.public_outlined),
+                    selectedIcon: const Icon(Icons.public),
+                    label: Text(context.strings.text('Space')),
                   ),
                   NavigationRailDestination(
                     icon: const Icon(Icons.manage_search_outlined),
@@ -294,15 +379,7 @@ class _MainShellState extends State<MainShell> {
         body: _BottomTabSwitcher(index: index, children: pages),
         bottomNavigationBar: NavigationBar(
           selectedIndex: index,
-          onDestinationSelected: (value) {
-            setState(() => index = value);
-            if (value == 0) {
-              widget.state.loadConversations();
-            }
-            if (value == 2) {
-              widget.state.refreshNotificationCounts();
-            }
-          },
+          onDestinationSelected: selectDestination,
           destinations: [
             NavigationDestination(
               icon: _BadgeIcon(
@@ -314,6 +391,11 @@ class _MainShellState extends State<MainShell> {
                 count: unreadChats,
               ),
               label: context.strings.text('Chats'),
+            ),
+            NavigationDestination(
+              icon: const Icon(Icons.public_outlined),
+              selectedIcon: const Icon(Icons.public),
+              label: context.strings.text('Space'),
             ),
             NavigationDestination(
               icon: const Icon(Icons.manage_search_outlined),
@@ -568,7 +650,14 @@ class ConversationScreen extends StatefulWidget {
   State<ConversationScreen> createState() => _ConversationScreenState();
 }
 
-enum _ConversationGroupFilter { all, important, friends, groups, archived }
+enum _ConversationGroupFilter {
+  all,
+  important,
+  friends,
+  groups,
+  archived,
+  hidden,
+}
 
 class _ConversationScreenState extends State<ConversationScreen> {
   final scaffoldKey = GlobalKey<ScaffoldState>();
@@ -676,15 +765,21 @@ class _ConversationScreenState extends State<ConversationScreen> {
     final pref = localPref(conversation);
     switch (groupFilter) {
       case _ConversationGroupFilter.all:
-        return !pref.archived;
+        return !conversation.hidden && !pref.archived;
       case _ConversationGroupFilter.important:
-        return !pref.archived && pref.pinned;
+        return !conversation.hidden && !pref.archived && pref.pinned;
       case _ConversationGroupFilter.friends:
-        return !pref.archived && conversation.type == ConversationType.private;
+        return !conversation.hidden &&
+            !pref.archived &&
+            conversation.type == ConversationType.private;
       case _ConversationGroupFilter.groups:
-        return !pref.archived && conversation.type == ConversationType.group;
+        return !conversation.hidden &&
+            !pref.archived &&
+            conversation.type == ConversationType.group;
       case _ConversationGroupFilter.archived:
-        return pref.archived;
+        return !conversation.hidden && pref.archived;
+      case _ConversationGroupFilter.hidden:
+        return conversation.hidden;
     }
   }
 
@@ -693,16 +788,21 @@ class _ConversationScreenState extends State<ConversationScreen> {
       final pref = localPref(conversation);
       switch (filter) {
         case _ConversationGroupFilter.all:
-          return !pref.archived;
+          return !conversation.hidden && !pref.archived;
         case _ConversationGroupFilter.important:
-          return !pref.archived && pref.pinned;
+          return !conversation.hidden && !pref.archived && pref.pinned;
         case _ConversationGroupFilter.friends:
-          return !pref.archived &&
+          return !conversation.hidden &&
+              !pref.archived &&
               conversation.type == ConversationType.private;
         case _ConversationGroupFilter.groups:
-          return !pref.archived && conversation.type == ConversationType.group;
+          return !conversation.hidden &&
+              !pref.archived &&
+              conversation.type == ConversationType.group;
         case _ConversationGroupFilter.archived:
-          return pref.archived;
+          return !conversation.hidden && pref.archived;
+        case _ConversationGroupFilter.hidden:
+          return conversation.hidden;
       }
     }).length;
   }
@@ -722,6 +822,8 @@ class _ConversationScreenState extends State<ConversationScreen> {
         return 'No group conversations.';
       case _ConversationGroupFilter.archived:
         return 'No archived conversations.';
+      case _ConversationGroupFilter.hidden:
+        return 'No hidden conversations.';
     }
   }
 
@@ -783,6 +885,22 @@ class _ConversationScreenState extends State<ConversationScreen> {
                 ),
                 onTap: () => Navigator.of(context).pop('archive'),
               ),
+              if (conversation.type == ConversationType.group)
+                ListTile(
+                  leading: Icon(
+                    conversation.hidden
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined,
+                  ),
+                  title: Text(
+                    context.strings.text(
+                      conversation.hidden
+                          ? 'Unhide conversation'
+                          : 'Hide conversation',
+                    ),
+                  ),
+                  onTap: () => Navigator.of(context).pop('hide'),
+                ),
             ],
           ),
         ),
@@ -812,6 +930,36 @@ class _ConversationScreenState extends State<ConversationScreen> {
             pinned: current.archived ? current.pinned : false,
           ),
         );
+        break;
+      case 'hide':
+        try {
+          final update = await widget.state.toggleConversationHidden(
+            conversation,
+          );
+          if (!mounted) {
+            return;
+          }
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                update.message.trim().isNotEmpty
+                    ? update.message
+                    : context.strings.text(
+                        update.isHidden
+                            ? 'Conversation hidden.'
+                            : 'Conversation unhidden.',
+                      ),
+              ),
+            ),
+          );
+        } catch (err) {
+          if (!mounted) {
+            return;
+          }
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(err.toString())));
+        }
         break;
     }
   }
@@ -874,6 +1022,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
       _ConversationGroupFilter.friends,
       _ConversationGroupFilter.groups,
       _ConversationGroupFilter.archived,
+      _ConversationGroupFilter.hidden,
     ];
     final content = RefreshIndicator(
       onRefresh: refresh,
@@ -1123,6 +1272,8 @@ String _conversationGroupLabel(_ConversationGroupFilter filter) {
       return 'Groups ({count})';
     case _ConversationGroupFilter.archived:
       return 'Archived ({count})';
+    case _ConversationGroupFilter.hidden:
+      return 'Hidden ({count})';
   }
 }
 
@@ -1138,6 +1289,8 @@ IconData _conversationGroupIcon(_ConversationGroupFilter filter) {
       return Icons.groups_outlined;
     case _ConversationGroupFilter.archived:
       return Icons.archive_outlined;
+    case _ConversationGroupFilter.hidden:
+      return Icons.visibility_off_outlined;
   }
 }
 
@@ -1214,6 +1367,15 @@ class _MobileCommandSidebarState extends State<_MobileCommandSidebar> {
         keywords: const ['search', 'messages', 'history', '搜索', '消息'],
         run: (context) =>
             openRoute(MessageSearchScreen(state: widget.state), context),
+      ),
+      _CommandPaletteAction(
+        id: 'space',
+        icon: Icons.public_outlined,
+        title: strings.text('Space'),
+        subtitle: strings.text('Friends space feed'),
+        keywords: const ['space', 'feed', 'dynamic', '动态', '空间'],
+        run: (context) =>
+            openRoute(SpaceFeedScreen(state: widget.state), context),
       ),
       _CommandPaletteAction(
         id: 'refresh_conversations',
@@ -1848,6 +2010,14 @@ class _ConversationTile extends StatelessWidget {
               children: [
                 if (preference.pinned) ...[
                   Icon(Icons.push_pin, size: 15, color: colors.primary),
+                  const SizedBox(width: 4),
+                ],
+                if (conversation.hidden) ...[
+                  Icon(
+                    Icons.visibility_off_outlined,
+                    size: 16,
+                    color: colors.onSurfaceVariant,
+                  ),
                   const SizedBox(width: 4),
                 ],
                 Expanded(

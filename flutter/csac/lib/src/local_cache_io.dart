@@ -120,7 +120,7 @@ class CsacLocalCache {
     final rows = db.select('''
       SELECT type, remote_id, name, avatar, subtitle, status_subtitle,
         last_message_preview, unread_count, search_text, last_message_at,
-        display_order
+        display_order, hidden
       FROM conversations
       ORDER BY display_order ASC, updated_at DESC, name COLLATE NOCASE ASC
       ''');
@@ -138,6 +138,7 @@ class CsacLocalCache {
           searchText: row['search_text'] as String,
           lastMessageAt: row['last_message_at'] as int,
           displayOrder: row['display_order'] as int,
+          hidden: asBool(row['hidden']),
         ),
     ];
   }
@@ -148,7 +149,7 @@ class CsacLocalCache {
       '''
       SELECT type, remote_id, name, avatar, subtitle, status_subtitle,
         last_message_preview, unread_count, search_text, last_message_at,
-        display_order
+        display_order, hidden
       FROM conversations
       WHERE type = ? AND remote_id = ?
       LIMIT 1
@@ -192,9 +193,9 @@ class CsacLocalCache {
       INSERT INTO conversations (
         type, remote_id, name, avatar, subtitle, status_subtitle,
         last_message_preview, unread_count, search_text, last_message_at,
-        updated_at, display_order
+        updated_at, display_order, hidden
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(type, remote_id) DO UPDATE SET
         name = excluded.name,
         avatar = excluded.avatar,
@@ -205,7 +206,8 @@ class CsacLocalCache {
         search_text = excluded.search_text,
         last_message_at = excluded.last_message_at,
         updated_at = excluded.updated_at,
-        display_order = excluded.display_order
+        display_order = excluded.display_order,
+        hidden = excluded.hidden
       ''');
     try {
       db.execute('BEGIN IMMEDIATE');
@@ -226,6 +228,7 @@ class CsacLocalCache {
           conversation.lastMessageAt,
           now,
           index,
+          conversation.hidden ? 1 : 0,
         ]);
         index++;
       }
@@ -426,6 +429,9 @@ class CsacLocalCache {
         c.search_text,
         c.last_message_at,
         c.display_order,
+        c.status_subtitle,
+        c.last_message_preview,
+        c.hidden,
         m.id,
         m.sender_id,
         m.sender,
@@ -486,6 +492,9 @@ class CsacLocalCache {
         c.search_text,
         c.last_message_at,
         c.display_order,
+        c.status_subtitle,
+        c.last_message_preview,
+        c.hidden,
         m.id,
         m.sender_id,
         m.sender,
@@ -864,6 +873,7 @@ class CsacLocalCache {
         last_message_at INTEGER NOT NULL DEFAULT 0,
         updated_at INTEGER NOT NULL DEFAULT 0,
         display_order INTEGER NOT NULL DEFAULT 0,
+        hidden INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (type, remote_id)
       )
       ''');
@@ -901,6 +911,12 @@ class CsacLocalCache {
       db,
       'conversations',
       'last_message_at',
+      'INTEGER NOT NULL DEFAULT 0',
+    );
+    _addColumnIfMissing(
+      db,
+      'conversations',
+      'hidden',
       'INTEGER NOT NULL DEFAULT 0',
     );
     db.execute('''
@@ -1047,6 +1063,7 @@ class CsacLocalCache {
       searchText: row['search_text'] as String,
       lastMessageAt: row['last_message_at'] as int,
       displayOrder: row['display_order'] as int,
+      hidden: asBool(row['hidden']),
     );
   }
 

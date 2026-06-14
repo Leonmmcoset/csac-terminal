@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 enum ConversationType { private, group }
 
 enum SearchScope { all, private, group, image, essence }
@@ -234,6 +236,7 @@ class Conversation {
     this.searchText = '',
     this.lastMessageAt = 0,
     this.displayOrder = 0,
+    this.hidden = false,
   });
 
   final ConversationType type;
@@ -247,6 +250,7 @@ class Conversation {
   final String searchText;
   final int lastMessageAt;
   final int displayOrder;
+  final bool hidden;
 
   Conversation copyWith({
     ConversationType? type,
@@ -260,6 +264,7 @@ class Conversation {
     String? searchText,
     int? lastMessageAt,
     int? displayOrder,
+    bool? hidden,
   }) {
     return Conversation(
       type: type ?? this.type,
@@ -273,6 +278,7 @@ class Conversation {
       searchText: searchText ?? this.searchText,
       lastMessageAt: lastMessageAt ?? this.lastMessageAt,
       displayOrder: displayOrder ?? this.displayOrder,
+      hidden: hidden ?? this.hidden,
     );
   }
 
@@ -336,6 +342,182 @@ class UserProfile {
       ]).ifEmpty('none'),
       isFriend: asBool(json['is_friend']),
       canAddFriend: asBool(json['can_add_friend']),
+    );
+  }
+}
+
+class SpacePost {
+  const SpacePost({
+    required this.id,
+    required this.senderUid,
+    required this.nickname,
+    this.avatar = '',
+    this.content = '',
+    this.images = const <String>[],
+    this.isReply = false,
+    this.replyId,
+    this.likesNum = 0,
+    this.isLiked = false,
+    this.createdAt = '',
+    this.replies = const <SpacePost>[],
+  });
+
+  final int id;
+  final int senderUid;
+  final String nickname;
+  final String avatar;
+  final String content;
+  final List<String> images;
+  final bool isReply;
+  final int? replyId;
+  final int likesNum;
+  final bool isLiked;
+  final String createdAt;
+  final List<SpacePost> replies;
+
+  String get displayName =>
+      nickname.trim().isEmpty ? 'UID $senderUid' : nickname.trim();
+
+  SpacePost copyWith({
+    int? id,
+    int? senderUid,
+    String? nickname,
+    String? avatar,
+    String? content,
+    List<String>? images,
+    bool? isReply,
+    int? replyId,
+    int? likesNum,
+    bool? isLiked,
+    String? createdAt,
+    List<SpacePost>? replies,
+  }) {
+    return SpacePost(
+      id: id ?? this.id,
+      senderUid: senderUid ?? this.senderUid,
+      nickname: nickname ?? this.nickname,
+      avatar: avatar ?? this.avatar,
+      content: content ?? this.content,
+      images: images ?? this.images,
+      isReply: isReply ?? this.isReply,
+      replyId: replyId ?? this.replyId,
+      likesNum: likesNum ?? this.likesNum,
+      isLiked: isLiked ?? this.isLiked,
+      createdAt: createdAt ?? this.createdAt,
+      replies: replies ?? this.replies,
+    );
+  }
+
+  factory SpacePost.fromJson(Map<String, dynamic> json) {
+    final id = firstInt(json, const ['cont_id', 'id']);
+    final senderUid = firstInt(json, const ['sender_uid', 'uid', 'user_id']);
+    final rawReplyId = firstInt(json, const ['reply_id', 'parent_id']);
+    return SpacePost(
+      id: id,
+      senderUid: senderUid,
+      nickname: firstString(json, const [
+        'nickname',
+        'name',
+      ]).ifEmpty('UID $senderUid'),
+      avatar: normalizeApiUrl(asString(json['avatar'])),
+      content: firstString(json, const ['content', 'text', 'message']),
+      images: spacePostImageList(json),
+      isReply: asBool(json['is_reply']) || asInt(json['is_reply']) == 1,
+      replyId: rawReplyId <= 0 ? null : rawReplyId,
+      likesNum: firstInt(json, const ['likes_num', 'like_count', 'likes']),
+      isLiked: asBool(json['is_liked']) || asBool(json['liked']),
+      createdAt: firstReadableTime(json, const [
+        'created_at',
+        'create_time',
+        'time',
+        'add_time',
+      ]),
+      replies: normalizeMapList(
+        json['replies'],
+      ).map(SpacePost.fromJson).toList(),
+    );
+  }
+}
+
+List<String> spacePostImageList(Map<String, dynamic> json) {
+  final images = <String>[];
+  final seen = <String>{};
+  for (final key in const [
+    'img_conts',
+    'img_cont',
+    'image_conts',
+    'image_cont',
+    'images',
+    'image',
+    'image_urls',
+    'image_url',
+    'img_urls',
+    'img_url',
+    'imgs',
+    'photos',
+    'photo_urls',
+    'pictures',
+    'picture_urls',
+    'media',
+    'attachments',
+  ]) {
+    for (final image in normalizeApiUrlList(json[key])) {
+      if (seen.add(image)) {
+        images.add(image);
+      }
+    }
+  }
+  return images;
+}
+
+class SpacePostPage {
+  const SpacePostPage({
+    required this.posts,
+    required this.total,
+    required this.page,
+    required this.pageSize,
+  });
+
+  final List<SpacePost> posts;
+  final int total;
+  final int page;
+  final int pageSize;
+
+  factory SpacePostPage.fromJson(Map<String, dynamic> json) {
+    return SpacePostPage(
+      posts: normalizeMapList(json['list']).map(SpacePost.fromJson).toList(),
+      total: firstInt(json, const ['total', 'count']),
+      page: firstInt(json, const ['page']).ifZero(1),
+      pageSize: firstInt(json, const ['page_size', 'pageSize']).ifZero(20),
+    );
+  }
+}
+
+class SpaceLikeUpdate {
+  const SpaceLikeUpdate({
+    required this.isLiked,
+    required this.likesNum,
+    this.message = '',
+  });
+
+  final bool isLiked;
+  final int likesNum;
+  final String message;
+
+  factory SpaceLikeUpdate.fromJson(Map<String, dynamic> json) {
+    final nested = json['data'];
+    final nestedMap = nested is Map
+        ? Map<String, dynamic>.from(nested)
+        : const <String, dynamic>{};
+    return SpaceLikeUpdate(
+      isLiked: asBool(json['is_liked']) || asBool(nestedMap['is_liked']),
+      likesNum: firstInt(
+        json,
+        const ['likes_num', 'like_count', 'likes'],
+      ).ifZero(firstInt(nestedMap, const ['likes_num', 'like_count', 'likes'])),
+      message: firstString(json, const [
+        'message',
+      ]).ifEmpty(firstString(nestedMap, const ['message'])),
     );
   }
 }
@@ -1731,6 +1913,128 @@ bool asBool(Object? value) {
   }
   final text = asString(value).trim().toLowerCase();
   return text == '1' || text == 'true' || text == 'yes';
+}
+
+List<Map<String, dynamic>> normalizeMapList(Object? value) {
+  if (value is List) {
+    return value
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+  }
+  if (value is Map) {
+    return [Map<String, dynamic>.from(value)];
+  }
+  return const <Map<String, dynamic>>[];
+}
+
+List<String> normalizeApiUrlList(Object? value) {
+  final urls = <String>[];
+  final seen = <String>{};
+
+  void addRaw(Object? raw) {
+    final text = asString(raw).trim();
+    if (text.isEmpty || text.toLowerCase() == 'null') {
+      return;
+    }
+    final normalized = normalizeApiUrl(text);
+    if (seen.add(normalized)) {
+      urls.add(normalized);
+    }
+  }
+
+  void addValue(Object? item) {
+    if (item is List) {
+      for (final value in item) {
+        addValue(value);
+      }
+      return;
+    }
+    if (item is Map) {
+      for (final value in _apiUrlValuesFromMap(
+        Map<String, dynamic>.from(item),
+      )) {
+        addValue(value);
+      }
+      return;
+    }
+    final text = asString(item).trim();
+    if (text.isEmpty || text.toLowerCase() == 'null') {
+      return;
+    }
+    if (text.startsWith('[') || text.startsWith('{')) {
+      try {
+        final decoded = jsonDecode(text);
+        if (decoded is List || decoded is Map) {
+          addValue(decoded);
+          return;
+        }
+      } catch (_) {
+        // Fall back to delimiter splitting below.
+      }
+    }
+    for (final value in _splitApiUrlText(text)) {
+      addRaw(value);
+    }
+  }
+
+  addValue(value);
+  return urls;
+}
+
+List<Object?> _apiUrlValuesFromMap(Map<String, dynamic> value) {
+  final values = <Object?>[];
+  for (final key in const [
+    'url',
+    'src',
+    'path',
+    'file',
+    'file_url',
+    'address',
+    'image',
+    'image_url',
+    'img',
+    'img_url',
+    'photo',
+    'photo_url',
+    'picture',
+    'picture_url',
+    'images',
+    'image_urls',
+    'imgs',
+    'img_urls',
+    'photos',
+    'photo_urls',
+    'pictures',
+    'picture_urls',
+    'list',
+    'items',
+    'files',
+    'data',
+  ]) {
+    if (value.containsKey(key)) {
+      values.add(value[key]);
+    }
+  }
+  return values;
+}
+
+List<String> _splitApiUrlText(String value) {
+  final text = value.trim();
+  if (text.isEmpty) {
+    return const <String>[];
+  }
+  if (!text.contains(',') &&
+      !text.contains('|') &&
+      !text.contains('\n') &&
+      !text.contains('\r')) {
+    return <String>[text];
+  }
+  return text
+      .split(RegExp(r'[\n\r,|]+'))
+      .map((item) => item.trim())
+      .where((item) => item.isNotEmpty)
+      .toList();
 }
 
 bool roleTextIndicatesOwner(String value) {
