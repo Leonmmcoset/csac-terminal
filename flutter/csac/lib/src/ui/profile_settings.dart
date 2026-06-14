@@ -110,6 +110,20 @@ class ProfileScreen extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             OutlinedButton.icon(
+              onPressed: user == null
+                  ? null
+                  : () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => UserQrScreen(state: state),
+                        ),
+                      );
+                    },
+              icon: const Icon(Icons.qr_code_2_outlined),
+              label: Text(strings.text('My QR code')),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
               onPressed: () {
                 Navigator.of(context).push(
                   MaterialPageRoute<void>(
@@ -434,6 +448,25 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       ),
                       trailing: progressOrChevron(updatingAvatar),
                       onTap: updatingAvatar ? null : changeAvatar,
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.qr_code_2_outlined),
+                      title: Text(strings.text('My QR code')),
+                      subtitle: Text(
+                        strings.text('Share your profile link as a QR code'),
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: user == null
+                          ? null
+                          : () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder: (_) =>
+                                      UserQrScreen(state: widget.state),
+                                ),
+                              );
+                            },
                     ),
                     const Divider(height: 1),
                     ListTile(
@@ -3115,6 +3148,15 @@ const _urlSchemeDocEntries = <_UrlSchemeDocEntry>[
       '$csacDeepLinkScheme://me',
       '$csacDeepLinkScheme://profile',
       '$csacDeepLinkScheme://settings',
+    ],
+  ),
+  _UrlSchemeDocEntry(
+    titleKey: 'Open user profile',
+    descriptionKey: 'Replace {id} with the user UID.',
+    examples: [
+      '$csacDeepLinkScheme://profile/user/{id}',
+      '$csacDeepLinkScheme://profile/{id}',
+      '$csacDeepLinkScheme://u/{id}',
     ],
   ),
   _UrlSchemeDocEntry(

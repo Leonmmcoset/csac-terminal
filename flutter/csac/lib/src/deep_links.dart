@@ -6,6 +6,7 @@ enum CsacDeepLinkAction {
   search,
   notices,
   profile,
+  userProfile,
   groupChat,
   privateChat,
   unsupported,
@@ -57,27 +58,44 @@ CsacDeepLinkTarget parseCsacDeepLink(Uri uri) {
       return const CsacDeepLinkTarget(CsacDeepLinkAction.notices);
     case 'me':
     case 'mine':
-    case 'profile':
     case 'settings':
       return const CsacDeepLinkTarget(CsacDeepLinkAction.profile);
+    case 'profile':
+      return _profileLinkTarget(uri, segments);
+    case 'u':
+    case 'uid':
+    case 'user-profile':
+    case 'profile-user':
+      return _typedDeepLinkTarget(
+        CsacDeepLinkAction.userProfile,
+        segments.length > 1 ? segments[1] : uri.queryParameters['id'],
+      );
     case 'chat':
     case 'conversation':
       return _chatLinkTarget(uri, segments);
     case 'group':
     case 'room':
-      return _typedChatLinkTarget(
+      return _typedDeepLinkTarget(
         CsacDeepLinkAction.groupChat,
         segments.length > 1 ? segments[1] : uri.queryParameters['id'],
       );
     case 'private':
     case 'friend':
     case 'user':
-      return _typedChatLinkTarget(
+      return _typedDeepLinkTarget(
         CsacDeepLinkAction.privateChat,
         segments.length > 1 ? segments[1] : uri.queryParameters['id'],
       );
   }
   return const CsacDeepLinkTarget(CsacDeepLinkAction.unsupported);
+}
+
+String csacUserProfileDeepLink(int uid) {
+  return '$csacDeepLinkScheme://profile/user/$uid';
+}
+
+String csacGroupChatDeepLink(int roomId) {
+  return '$csacDeepLinkScheme://chat/group/$roomId';
 }
 
 List<String> csacDeepLinkSegments(Uri uri) {
@@ -113,16 +131,37 @@ CsacDeepLinkTarget _chatLinkTarget(Uri uri, List<String> segments) {
   switch (type.toLowerCase()) {
     case 'group':
     case 'room':
-      return _typedChatLinkTarget(CsacDeepLinkAction.groupChat, id);
+      return _typedDeepLinkTarget(CsacDeepLinkAction.groupChat, id);
     case 'private':
     case 'friend':
     case 'user':
-      return _typedChatLinkTarget(CsacDeepLinkAction.privateChat, id);
+      return _typedDeepLinkTarget(CsacDeepLinkAction.privateChat, id);
   }
   return const CsacDeepLinkTarget(CsacDeepLinkAction.unsupported);
 }
 
-CsacDeepLinkTarget _typedChatLinkTarget(
+CsacDeepLinkTarget _profileLinkTarget(Uri uri, List<String> segments) {
+  if (segments.length > 1) {
+    final kind = segments[1];
+    if (kind == 'user' || kind == 'uid') {
+      return _typedDeepLinkTarget(
+        CsacDeepLinkAction.userProfile,
+        segments.length > 2 ? segments[2] : uri.queryParameters['id'],
+      );
+    }
+    final id = int.tryParse(kind) ?? 0;
+    if (id > 0) {
+      return CsacDeepLinkTarget(CsacDeepLinkAction.userProfile, id: id);
+    }
+  }
+  final id = int.tryParse(uri.queryParameters['uid'] ?? '') ?? 0;
+  if (id > 0) {
+    return CsacDeepLinkTarget(CsacDeepLinkAction.userProfile, id: id);
+  }
+  return const CsacDeepLinkTarget(CsacDeepLinkAction.profile);
+}
+
+CsacDeepLinkTarget _typedDeepLinkTarget(
   CsacDeepLinkAction action,
   String? rawId,
 ) {

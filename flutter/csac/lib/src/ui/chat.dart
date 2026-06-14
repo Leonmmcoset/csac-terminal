@@ -1708,6 +1708,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     message,
                     context.strings,
                   ).trim().isNotEmpty,
+              canScanImageQr: isMobilePlatform && message.imageUrl.isNotEmpty,
             ),
           ),
         ).whenComplete(() {
@@ -1749,6 +1750,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       case _MessageAction.downloadImage:
         await downloadImage(context, message.imageUrl);
         break;
+      case _MessageAction.scanImageQr:
+        await scanMessageImageQr(message);
+        break;
       case _MessageAction.reply:
         setReplyTarget(message);
         break;
@@ -1759,6 +1763,150 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         await toggleEssence(message);
         break;
     }
+  }
+
+  Future<void> scanMessageImageQr(ChatMessage message) async {
+    if (!isMobilePlatform || message.imageUrl.isEmpty) {
+      return;
+    }
+    final strings = context.strings;
+    String? cachedPath;
+    try {
+      cachedPath = await cacheQrScanImageUrl(message.imageUrl);
+      final value = await firstQrValueInImagePath(cachedPath);
+      if (!mounted) {
+        return;
+      }
+      if (value == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(strings.text('No QR code found in this image.')),
+          ),
+        );
+        return;
+      }
+      await openScannedQrValue(value);
+    } catch (err) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              strings.format('QR scan failed: {error}', {'error': err}),
+            ),
+          ),
+        );
+      }
+    } finally {
+      final path = cachedPath;
+      if (path != null) {
+        unawaited(deleteLocalFileIfExists(path));
+      }
+    }
+  }
+
+  Future<void> openScannedQrValue(String value) async {
+    final strings = context.strings;
+    final uri = Uri.tryParse(value);
+    if (uri == null || !isCsacDeepLink(uri)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(strings.text('This is not a CsAC QR code.'))),
+      );
+      return;
+    }
+    final target = parseCsacDeepLink(uri);
+    if (!target.isSupported) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(strings.text('Unsupported CsAC link.'))),
+      );
+      return;
+    }
+    final handled = await openScannedDeepLinkTarget(target);
+    if (!mounted) {
+      return;
+    }
+    if (!handled) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(strings.text('Unable to open CsAC link.'))),
+      );
+    }
+  }
+
+  Future<bool> openScannedDeepLinkTarget(CsacDeepLinkTarget target) async {
+    switch (target.action) {
+      case CsacDeepLinkAction.userProfile:
+        final uid = target.id ?? 0;
+        if (uid <= 0) {
+          return false;
+        }
+        await openUserProfile(context, widget.state, uid);
+        return true;
+      case CsacDeepLinkAction.groupChat:
+        return openDeepLinkedConversation(ConversationType.group, target.id);
+      case CsacDeepLinkAction.privateChat:
+        return openDeepLinkedConversation(ConversationType.private, target.id);
+      case CsacDeepLinkAction.chats:
+      case CsacDeepLinkAction.space:
+      case CsacDeepLinkAction.search:
+      case CsacDeepLinkAction.notices:
+      case CsacDeepLinkAction.profile:
+      case CsacDeepLinkAction.unsupported:
+        return false;
+    }
+  }
+
+  Future<bool> openDeepLinkedConversation(
+    ConversationType type,
+    int? id,
+  ) async {
+    final conversationId = id ?? 0;
+    if (conversationId <= 0) {
+      return false;
+    }
+    if (widget.conversation.type == type &&
+        widget.conversation.id == conversationId) {
+      return true;
+    }
+    var conversation = widget.state.conversations
+        .where((item) => item.type == type && item.id == conversationId)
+        .firstOrNull;
+    if (conversation == null) {
+      try {
+        await widget.state.loadConversations();
+      } catch (_) {}
+      if (!mounted) {
+        return true;
+      }
+      conversation = widget.state.conversations
+          .where((item) => item.type == type && item.id == conversationId)
+          .firstOrNull;
+    }
+    if (conversation == null && type == ConversationType.group) {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => ConversationDetailScreen(
+            state: widget.state,
+            conversation: Conversation(
+              type: ConversationType.group,
+              id: conversationId,
+              name: context.strings.format('Room {id}', {'id': conversationId}),
+            ),
+          ),
+        ),
+      );
+      return true;
+    }
+    if (conversation == null && type == ConversationType.private) {
+      await openUserProfile(context, widget.state, conversationId);
+      return true;
+    }
+    final opened = conversation!.copyWith(unreadCount: 0);
+    unawaited(widget.state.markConversationRead(opened));
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ChatScreen(state: widget.state, conversation: opened),
+      ),
+    );
+    return true;
   }
 
   Future<void> showSelectableMessageText(ChatMessage message) async {
@@ -6238,6 +6386,7 @@ enum _MessageAction {
   copyImage,
   openImage,
   downloadImage,
+  scanImageQr,
   reply,
   recall,
   essence,
@@ -6277,12 +6426,14 @@ class _MessageActionSheet extends StatelessWidget {
     required this.canRecall,
     required this.canEssence,
     required this.canSelectText,
+    required this.canScanImageQr,
   });
 
   final ChatMessage message;
   final bool canRecall;
   final bool canEssence;
   final bool canSelectText;
+  final bool canScanImageQr;
 
   @override
   Widget build(BuildContext context) {
@@ -6332,6 +6483,13 @@ class _MessageActionSheet extends StatelessWidget {
               title: Text(strings.text('Download image')),
               onTap: () =>
                   Navigator.of(context).pop(_MessageAction.downloadImage),
+            ),
+          if (canScanImageQr)
+            ListTile(
+              leading: const Icon(Icons.qr_code_scanner),
+              title: Text(strings.text('Scan QR code in image')),
+              onTap: () =>
+                  Navigator.of(context).pop(_MessageAction.scanImageQr),
             ),
           if (canRecall)
             ListTile(

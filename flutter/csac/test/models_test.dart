@@ -151,11 +151,29 @@ void main() {
     expect(group.action, CsacDeepLinkAction.groupChat);
     expect(group.id, 123);
 
+    final sharedGroup = parseCsacDeepLink(
+      Uri.parse(csacGroupChatDeepLink(321)),
+    );
+    expect(sharedGroup.action, CsacDeepLinkAction.groupChat);
+    expect(sharedGroup.id, 321);
+
     final private = parseCsacDeepLink(
       Uri.parse('csacflutterleon://private/456'),
     );
     expect(private.action, CsacDeepLinkAction.privateChat);
     expect(private.id, 456);
+
+    final userProfile = parseCsacDeepLink(
+      Uri.parse(csacUserProfileDeepLink(789)),
+    );
+    expect(userProfile.action, CsacDeepLinkAction.userProfile);
+    expect(userProfile.id, 789);
+
+    final shortUserProfile = parseCsacDeepLink(
+      Uri.parse('csacflutterleon://u/790'),
+    );
+    expect(shortUserProfile.action, CsacDeepLinkAction.userProfile);
+    expect(shortUserProfile.id, 790);
   });
 
   test('release version tags match app versions', () {

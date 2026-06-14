@@ -731,6 +731,9 @@ class _SpaceComposeSheetState extends State<_SpaceComposeSheet> {
       );
       return;
     }
+    if (isMobilePlatform) {
+      FocusManager.instance.primaryFocus?.unfocus();
+    }
     Navigator.of(
       context,
     ).pop(_SpaceDraft(content: content.text.trim(), images: List.of(images)));

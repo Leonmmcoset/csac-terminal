@@ -210,6 +210,8 @@ class _MainShellState extends State<MainShell> {
         return openDeepLinkTab(3);
       case CsacDeepLinkAction.profile:
         return openDeepLinkTab(4);
+      case CsacDeepLinkAction.userProfile:
+        return openDeepLinkUserProfile(target.id ?? 0);
       case CsacDeepLinkAction.groupChat:
         return openDeepLinkChat(ConversationType.group, target.id ?? 0);
       case CsacDeepLinkAction.privateChat:
@@ -245,6 +247,9 @@ class _MainShellState extends State<MainShell> {
       conversation = findConversation(type, id);
     }
     if (conversation == null) {
+      if (type == ConversationType.group) {
+        return openDeepLinkGroupDetail(id);
+      }
       return false;
     }
 
@@ -262,6 +267,40 @@ class _MainShellState extends State<MainShell> {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => ChatScreen(state: widget.state, conversation: opened),
+      ),
+    );
+    return true;
+  }
+
+  Future<bool> openDeepLinkGroupDetail(int roomId) async {
+    if (roomId <= 0) {
+      return false;
+    }
+    Navigator.of(context).popUntil((route) => route.isFirst);
+    selectDestination(0);
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ConversationDetailScreen(
+          state: widget.state,
+          conversation: Conversation(
+            type: ConversationType.group,
+            id: roomId,
+            name: context.strings.format('Room {id}', {'id': roomId}),
+          ),
+        ),
+      ),
+    );
+    return true;
+  }
+
+  Future<bool> openDeepLinkUserProfile(int uid) async {
+    if (uid <= 0) {
+      return false;
+    }
+    Navigator.of(context).popUntil((route) => route.isFirst);
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => UserProfileScreen(state: widget.state, uid: uid),
       ),
     );
     return true;
@@ -285,6 +324,7 @@ class _MainShellState extends State<MainShell> {
         state: widget.state,
         embedded: true,
         selectedConversation: selectedConversation,
+        onOpenDeepLinkTarget: openDeepLinkTarget,
         onConversationSelected: wide
             ? (conversation) {
                 widget.state.markConversationRead(conversation);
@@ -639,12 +679,14 @@ class ConversationScreen extends StatefulWidget {
     this.embedded = false,
     this.selectedConversation,
     this.onConversationSelected,
+    this.onOpenDeepLinkTarget,
   });
 
   final CsacAppState state;
   final bool embedded;
   final Conversation? selectedConversation;
   final ValueChanged<Conversation>? onConversationSelected;
+  final Future<bool> Function(CsacDeepLinkTarget target)? onOpenDeepLinkTarget;
 
   @override
   State<ConversationScreen> createState() => _ConversationScreenState();
@@ -969,6 +1011,9 @@ class _ConversationScreenState extends State<ConversationScreen> {
       case 'refresh':
         await refresh();
         break;
+      case 'scanQr':
+        await scanQrCode();
+        break;
       case 'addFriend':
         await Navigator.of(context).push(
           MaterialPageRoute<void>(
@@ -1003,9 +1048,64 @@ class _ConversationScreenState extends State<ConversationScreen> {
     }
     if (mounted &&
         action != 'refresh' &&
+        action != 'scanQr' &&
         action != 'searchMessages' &&
         action != 'logout') {
       await refresh();
+    }
+  }
+
+  Future<void> scanQrCode() async {
+    if (!isMobilePlatform) {
+      return;
+    }
+    final uri = await openCsacQrScanner(context);
+    if (uri == null || !mounted) {
+      return;
+    }
+    final target = parseCsacDeepLink(uri);
+    if (!target.isSupported) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.strings.text('Unsupported CsAC link.'))),
+      );
+      return;
+    }
+    final opener = widget.onOpenDeepLinkTarget;
+    final handled = opener == null
+        ? await openScannedDeepLinkTarget(target)
+        : await opener(target);
+    if (mounted && !handled) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(context.strings.text('Unable to open CsAC link.')),
+        ),
+      );
+    }
+  }
+
+  Future<bool> openScannedDeepLinkTarget(CsacDeepLinkTarget target) async {
+    switch (target.action) {
+      case CsacDeepLinkAction.userProfile:
+        final uid = target.id ?? 0;
+        if (uid <= 0) {
+          return false;
+        }
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => UserProfileScreen(state: widget.state, uid: uid),
+          ),
+        );
+        return true;
+      case CsacDeepLinkAction.unsupported:
+        return false;
+      case CsacDeepLinkAction.chats:
+      case CsacDeepLinkAction.space:
+      case CsacDeepLinkAction.search:
+      case CsacDeepLinkAction.notices:
+      case CsacDeepLinkAction.profile:
+      case CsacDeepLinkAction.groupChat:
+      case CsacDeepLinkAction.privateChat:
+        return false;
     }
   }
 
@@ -1072,6 +1172,14 @@ class _ConversationScreenState extends State<ConversationScreen> {
                   tooltip: strings.text('More'),
                   onSelected: openHomeAction,
                   itemBuilder: (context) => [
+                    if (drawerEnabled)
+                      PopupMenuItem(
+                        value: 'scanQr',
+                        child: ListTile(
+                          leading: const Icon(Icons.qr_code_scanner),
+                          title: Text(strings.text('Scan QR code')),
+                        ),
+                      ),
                     PopupMenuItem(
                       value: 'addFriend',
                       child: ListTile(
@@ -1197,7 +1305,11 @@ class _ConversationScreenState extends State<ConversationScreen> {
     return Scaffold(
       key: scaffoldKey,
       drawer: drawerEnabled
-          ? _MobileCommandSidebar(state: widget.state, onRefresh: refresh)
+          ? _MobileCommandSidebar(
+              state: widget.state,
+              onRefresh: refresh,
+              onScanQr: scanQrCode,
+            )
           : null,
       drawerEnableOpenDragGesture: drawerEnabled,
       appBar: widget.embedded
@@ -1209,6 +1321,14 @@ class _ConversationScreenState extends State<ConversationScreen> {
                   tooltip: strings.text('More'),
                   onSelected: openHomeAction,
                   itemBuilder: (context) => [
+                    if (drawerEnabled)
+                      PopupMenuItem(
+                        value: 'scanQr',
+                        child: ListTile(
+                          leading: const Icon(Icons.qr_code_scanner),
+                          title: Text(strings.text('Scan QR code')),
+                        ),
+                      ),
                     PopupMenuItem(
                       value: 'refresh',
                       child: ListTile(
@@ -1308,10 +1428,15 @@ class _HorizontalDragScrollBehavior extends MaterialScrollBehavior {
 }
 
 class _MobileCommandSidebar extends StatefulWidget {
-  const _MobileCommandSidebar({required this.state, required this.onRefresh});
+  const _MobileCommandSidebar({
+    required this.state,
+    required this.onRefresh,
+    required this.onScanQr,
+  });
 
   final CsacAppState state;
   final Future<void> Function() onRefresh;
+  final Future<void> Function() onScanQr;
 
   @override
   State<_MobileCommandSidebar> createState() => _MobileCommandSidebarState();
@@ -1358,6 +1483,14 @@ class _MobileCommandSidebarState extends State<_MobileCommandSidebar> {
         keywords: const ['settings', 'setting', 'preferences', '设置'],
         run: (context) =>
             openRoute(SettingsScreen(state: widget.state), context),
+      ),
+      _CommandPaletteAction(
+        id: 'scan_qr',
+        icon: Icons.qr_code_scanner,
+        title: strings.text('Scan QR code'),
+        subtitle: strings.text('Open a CsAC QR code'),
+        keywords: const ['qr', 'scan', 'scheme', '扫码', '二维码'],
+        run: scanQr,
       ),
       _CommandPaletteAction(
         id: 'search_messages',
@@ -1690,6 +1823,10 @@ class _MobileCommandSidebarState extends State<_MobileCommandSidebar> {
     context.messenger?.showSnackBar(
       SnackBar(content: Text(context.strings.text('Refreshed.'))),
     );
+  }
+
+  Future<void> scanQr(_CommandPaletteActionContext context) async {
+    await widget.onScanQr();
   }
 
   Future<void> clearLocalCache(_CommandPaletteActionContext context) async {

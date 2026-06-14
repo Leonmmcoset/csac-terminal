@@ -836,6 +836,18 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
               ],
             ),
           ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => GroupQrScreen(group: profile),
+                ),
+              );
+            },
+            icon: const Icon(Icons.qr_code_2_outlined),
+            label: Text(strings.text('Group QR code')),
+          ),
           if (canManageGroup) ...[
             const SizedBox(height: 12),
             FilledButton.icon(
