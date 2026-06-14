@@ -875,5 +875,19 @@
   "Open message": "打开消息",
   "Replace {room} with the conversation ID and {message} with the message ID.": "将 {room} 替换为会话 ID，将 {message} 替换为消息 ID。",
   "Open search result": "打开搜索结果",
-  "Use q to open a search result query.": "使用 q 打开搜索结果查询。"
+  "Use q to open a search result query.": "使用 q 打开搜索结果查询。",
+  "Edit": "编辑",
+  "Preview": "预览",
+  "Bold": "加粗",
+  "Italic": "斜体",
+  "Strikethrough": "删除线",
+  "Heading": "标题",
+  "Quote": "引用",
+  "Bulleted list": "无序列表",
+  "Numbered list": "有序列表",
+  "Inline code": "行内代码",
+  "Code block": "代码块",
+  "Insert link": "插入链接",
+  "Nothing to preview.": "暂无可预览内容。",
+  "code": "代码"
 }
