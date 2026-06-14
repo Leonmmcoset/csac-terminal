@@ -755,10 +755,48 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
 
   Widget buildGroupProfile(GroupProfile profile) {
     final strings = context.strings;
+    final colors = Theme.of(context).colorScheme;
     final canManageGroup = canManageCurrentGroup;
     final isInGroup = isCurrentUserInGroup(profile);
     final visibleMembers = filteredMembers(memberSearch);
     final memberQuery = memberSearch.text.trim();
+
+    Widget actionTile({
+      required IconData icon,
+      required String title,
+      required VoidCallback? onTap,
+      String subtitle = '',
+      Color? color,
+    }) {
+      return ListTile(
+        enabled: onTap != null,
+        leading: Icon(icon, color: color),
+        title: Text(
+          title,
+          style: color == null ? null : TextStyle(color: color),
+        ),
+        subtitle: subtitle.trim().isEmpty ? null : Text(subtitle),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: onTap,
+      );
+    }
+
+    Widget actionGroup(List<Widget> tiles) {
+      return Card(
+        elevation: 0,
+        child: _RoundedInkClip(
+          child: Column(
+            children: [
+              for (var i = 0; i < tiles.length; i++) ...[
+                tiles[i],
+                if (i != tiles.length - 1) const Divider(height: 1),
+              ],
+            ],
+          ),
+        ),
+      );
+    }
+
     return RefreshIndicator(
       onRefresh: load,
       child: ListView(
@@ -837,60 +875,64 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => GroupQrScreen(group: profile),
+          actionGroup([
+            if (!isInGroup)
+              actionTile(
+                icon: Icons.group_add,
+                title: strings.text('Apply to join'),
+                onTap: () => joinGroup(profile),
+              ),
+            actionTile(
+              icon: Icons.qr_code_2_outlined,
+              title: strings.text('Group QR code'),
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => GroupQrScreen(group: profile),
+                  ),
+                );
+              },
+            ),
+            actionTile(
+              icon: Icons.perm_media_outlined,
+              title: strings.text('Media and files'),
+              onTap: openMediaCenter,
+            ),
+          ]),
+          if ((isInGroup && (profile.allowInvite || canManageGroup)) ||
+              canManageGroup) ...[
+            const SizedBox(height: 12),
+            actionGroup([
+              if (isInGroup && (profile.allowInvite || canManageGroup))
+                actionTile(
+                  icon: Icons.person_add_alt_1_outlined,
+                  title: strings.text('Invite member'),
+                  onTap: () => inviteMember(profile),
                 ),
-              );
-            },
-            icon: const Icon(Icons.qr_code_2_outlined),
-            label: Text(strings.text('Group QR code')),
-          ),
-          if (canManageGroup) ...[
-            const SizedBox(height: 12),
-            FilledButton.icon(
-              onPressed: () => openGroupManagement(profile),
-              icon: const Icon(Icons.admin_panel_settings_outlined),
-              label: Text(strings.text('Group management')),
-            ),
-          ],
-          if (isInGroup && (profile.allowInvite || canManageGroup)) ...[
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: () => inviteMember(profile),
-              icon: const Icon(Icons.person_add_alt_1_outlined),
-              label: Text(strings.text('Invite member')),
-            ),
-          ],
-          if (!isInGroup) ...[
-            const SizedBox(height: 12),
-            FilledButton.icon(
-              onPressed: () => joinGroup(profile),
-              icon: const Icon(Icons.group_add),
-              label: Text(strings.text('Apply to join')),
-            ),
-          ] else ...[
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: () => leaveGroup(profile),
-              icon: const Icon(Icons.logout),
-              label: Text(strings.text('Leave group')),
-            ),
+              if (canManageGroup)
+                actionTile(
+                  icon: Icons.admin_panel_settings_outlined,
+                  title: strings.text('Group management'),
+                  onTap: () => openGroupManagement(profile),
+                ),
+            ]),
           ],
           const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: openMediaCenter,
-            icon: const Icon(Icons.perm_media_outlined),
-            label: Text(strings.text('Media and files')),
-          ),
-          const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: () => openReportGroup(profile),
-            icon: const Icon(Icons.flag_outlined),
-            label: Text(strings.text('Report group')),
-          ),
+          actionGroup([
+            if (isInGroup)
+              actionTile(
+                icon: Icons.logout,
+                title: strings.text('Leave group'),
+                onTap: () => leaveGroup(profile),
+                color: colors.error,
+              ),
+            actionTile(
+              icon: Icons.flag_outlined,
+              title: strings.text('Report group'),
+              onTap: () => openReportGroup(profile),
+              color: colors.error,
+            ),
+          ]),
           const SizedBox(height: 20),
           Row(
             children: [
@@ -1487,8 +1529,9 @@ class _GroupManagementScreenState extends State<GroupManagementScreen> {
     final code = TextEditingController(text: group.code);
     final question = TextEditingController(text: group.question);
     final answer = TextEditingController(text: group.answer);
-    var showPublic = group.showPublic;
+    var showPublic = group.showPublic && group.allowSearch;
     var allowInvite = group.allowInvite;
+    var allowSearch = group.allowSearch;
     final strings = context.strings;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -1497,58 +1540,84 @@ class _GroupManagementScreenState extends State<GroupManagementScreen> {
           title: Text(strings.text('Group settings')),
           content: SizedBox(
             width: 480,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: joinType,
-                  decoration: InputDecoration(
-                    labelText: strings.text('Join type'),
-                    border: const OutlineInputBorder(),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: joinType,
+                    decoration: InputDecoration(
+                      labelText: strings.text('Join type'),
+                      border: const OutlineInputBorder(),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: code,
-                  decoration: InputDecoration(
-                    labelText: strings.text('Fixed code'),
-                    border: const OutlineInputBorder(),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: code,
+                    decoration: InputDecoration(
+                      labelText: strings.text('Fixed code'),
+                      border: const OutlineInputBorder(),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: question,
-                  maxLines: 2,
-                  decoration: InputDecoration(
-                    labelText: strings.text('Review question'),
-                    border: const OutlineInputBorder(),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: question,
+                    maxLines: 2,
+                    decoration: InputDecoration(
+                      labelText: strings.text('Review question'),
+                      border: const OutlineInputBorder(),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: answer,
-                  maxLines: 2,
-                  decoration: InputDecoration(
-                    labelText: strings.text('Review answer'),
-                    border: const OutlineInputBorder(),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: answer,
+                    maxLines: 2,
+                    decoration: InputDecoration(
+                      labelText: strings.text('Review answer'),
+                      border: const OutlineInputBorder(),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(strings.text('Show publicly')),
-                  value: showPublic,
-                  onChanged: (value) =>
-                      setDialogState(() => showPublic = value),
-                ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(strings.text('Allow member invites')),
-                  value: allowInvite,
-                  onChanged: (value) =>
-                      setDialogState(() => allowInvite = value),
-                ),
-              ],
+                  const SizedBox(height: 8),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(strings.text('Allow search and active join')),
+                    subtitle: Text(
+                      strings.text(
+                        'Hidden groups can only be joined by member invitation or QR code.',
+                      ),
+                    ),
+                    value: allowSearch,
+                    onChanged: (value) => setDialogState(() {
+                      allowSearch = value;
+                      if (!value) {
+                        showPublic = false;
+                      }
+                    }),
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(strings.text('Show publicly')),
+                    subtitle: allowSearch
+                        ? null
+                        : Text(
+                            strings.text(
+                              'Hidden groups never appear in the public list.',
+                            ),
+                          ),
+                    value: showPublic && allowSearch,
+                    onChanged: allowSearch
+                        ? (value) => setDialogState(() => showPublic = value)
+                        : null,
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(strings.text('Allow member invites')),
+                    value: allowInvite,
+                    onChanged: (value) =>
+                        setDialogState(() => allowInvite = value),
+                  ),
+                ],
+              ),
             ),
           ),
           actions: [
@@ -1584,6 +1653,7 @@ class _GroupManagementScreenState extends State<GroupManagementScreen> {
         answer: answerText,
         showPublic: showPublic,
         allowInvite: allowInvite,
+        allowSearch: allowSearch,
       ),
       'Group settings updated.',
     );
@@ -2049,6 +2119,15 @@ class _GroupManagementScreenState extends State<GroupManagementScreen> {
                               icon: Icons.tune,
                               title: strings.text('Join settings'),
                               subtitle: group.joinType,
+                              onTap: editSettings,
+                            ),
+                            const Divider(height: 1),
+                            actionTile(
+                              icon: Icons.manage_search,
+                              title: strings.text('Search visibility'),
+                              subtitle: group.allowSearch
+                                  ? strings.text('Group can be found by search')
+                                  : strings.text('Group is hidden from search'),
                               onTap: editSettings,
                             ),
                             const Divider(height: 1),

@@ -536,6 +536,7 @@ class GroupProfile {
     this.joinType = '',
     this.showPublic = false,
     this.allowInvite = true,
+    this.allowSearch = true,
     this.memberCount = 0,
     this.isInGroup = false,
     this.isAdmin = false,
@@ -556,6 +557,7 @@ class GroupProfile {
   final String joinType;
   final bool showPublic;
   final bool allowInvite;
+  final bool allowSearch;
   final int memberCount;
   final bool isInGroup;
   final bool isAdmin;
@@ -618,6 +620,9 @@ class GroupProfile {
       ]),
       allowInvite: json.containsKey('allow_invite')
           ? firstBool(json, const ['allow_invite'])
+          : true,
+      allowSearch: json.containsKey('allow_search')
+          ? firstBool(json, const ['allow_search'])
           : true,
       memberCount: asInt(json['member_count']),
       isInGroup: asBool(json['is_in_group']),

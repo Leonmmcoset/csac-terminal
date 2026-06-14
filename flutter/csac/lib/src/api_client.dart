@@ -266,6 +266,36 @@ class CsacApiClient {
       'pwd': password,
       'platform': platform,
     });
+    return _parseLoginResponse(data);
+  }
+
+  Future<CsacUser> loginByEmail(
+    String email,
+    String password, {
+    required String platform,
+  }) async {
+    final data = await postForm('auth/login_by_email', <String, String>{
+      'email': email.trim(),
+      'pwd': password,
+      'platform': platform,
+    });
+    return _parseLoginResponse(data);
+  }
+
+  Future<CsacUser> loginByCode(
+    String email,
+    String emailCode, {
+    required String platform,
+  }) async {
+    final data = await postForm('auth/login_by_code', <String, String>{
+      'email': email.trim(),
+      'email_code': emailCode.trim(),
+      'platform': platform,
+    });
+    return _parseLoginResponse(data);
+  }
+
+  Future<CsacUser> _parseLoginResponse(Map<String, dynamic> data) async {
     if (_needsEmailVerification(data)) {
       await saveSession();
       final exception = CsacEmailVerificationRequiredException(
@@ -349,6 +379,26 @@ class CsacApiClient {
     return EmailCodeResponse.fromJson(data);
   }
 
+  Future<EmailCodeResponse> sendLoginCode(String email) async {
+    final data = await postForm('auth/send_login_code', <String, String>{
+      'email': email.trim(),
+    });
+    return EmailCodeResponse.fromJson(data);
+  }
+
+  Future<void> requestRestoreAccount(String email) {
+    return postForm('auth/request_restore', <String, String>{
+      'email': email.trim(),
+    });
+  }
+
+  Future<void> restoreAccount(String email, String restoreToken) {
+    return postForm('auth/restore_account', <String, String>{
+      'email': email.trim(),
+      'restore_token': restoreToken.trim(),
+    });
+  }
+
   Future<void> logout() async {
     try {
       await postForm('auth/logout');
@@ -357,9 +407,13 @@ class CsacApiClient {
     }
   }
 
-  Future<void> deleteAccount() async {
+  Future<int> deleteAccount() async {
     try {
-      await postForm('user/delete_account');
+      final data = await postForm('user/delete_account');
+      return firstInt(data, const [
+        'cooling_period_days',
+        'coolingPeriodDays',
+      ]).ifZero(14);
     } finally {
       await clearSession();
     }
@@ -827,6 +881,7 @@ class CsacApiClient {
     required String answer,
     required bool showPublic,
     required bool allowInvite,
+    required bool allowSearch,
   }) {
     return postForm('group/update_settings', <String, String>{
       'room_id': '$roomId',
@@ -838,6 +893,7 @@ class CsacApiClient {
       'show_public': showPublic ? '1' : '0',
       'show_in_list': showPublic ? '1' : '0',
       'allow_invite': allowInvite ? '1' : '0',
+      'allow_search': allowSearch ? '1' : '0',
     });
   }
 

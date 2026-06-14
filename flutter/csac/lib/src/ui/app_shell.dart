@@ -1191,15 +1191,25 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
+enum _LoginMode { usernamePassword, emailPassword, emailCode }
+
 class _LoginScreenState extends State<LoginScreen> {
   final username = TextEditingController();
+  final loginEmail = TextEditingController();
+  final loginCode = TextEditingController();
   final password = TextEditingController();
   final passwordFocus = FocusNode();
   final scrollController = ScrollController();
   final developerOptionsKey = GlobalKey();
+  Timer? loginCodeTimer;
+  _LoginMode loginMode = _LoginMode.usernamePassword;
   List<LoginAccountRecord> accounts = const <LoginAccountRecord>[];
   bool loadingAccounts = true;
   bool acceptedLegalAgreements = false;
+  bool sendingLoginCode = false;
+  int loginCodeResendRemaining = 0;
+  int loginCodeExpiresIn = 600;
+  String? message;
   String? error;
 
   @override
@@ -1213,11 +1223,42 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
+    loginCodeTimer?.cancel();
     username.dispose();
+    loginEmail.dispose();
+    loginCode.dispose();
     password.dispose();
     passwordFocus.dispose();
     scrollController.dispose();
     super.dispose();
+  }
+
+  bool get canSendLoginCode =>
+      !sendingLoginCode && loginCodeResendRemaining <= 0;
+
+  void startLoginCodeCountdown(int seconds) {
+    loginCodeTimer?.cancel();
+    setState(() => loginCodeResendRemaining = seconds <= 0 ? 60 : seconds);
+    loginCodeTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (loginCodeResendRemaining <= 1) {
+        timer.cancel();
+        setState(() => loginCodeResendRemaining = 0);
+        return;
+      }
+      setState(() => loginCodeResendRemaining--);
+    });
+  }
+
+  void changeLoginMode(_LoginMode mode) {
+    setState(() {
+      loginMode = mode;
+      error = null;
+      message = null;
+    });
   }
 
   Future<void> setLegalAccepted(bool accepted) async {
@@ -1288,6 +1329,12 @@ class _LoginScreenState extends State<LoginScreen> {
     username.text = account.username.trim().isEmpty
         ? '${account.uid}'
         : account.username.trim();
+    if (_looksLikeEmail(account.username)) {
+      loginEmail.text = account.username.trim();
+      loginMode = _LoginMode.emailPassword;
+    } else {
+      loginMode = _LoginMode.usernamePassword;
+    }
     password.clear();
     setState(() => error = null);
     passwordFocus.requestFocus();
@@ -1303,21 +1350,91 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!ensureLegalAccepted()) {
       return;
     }
-    if (name.isEmpty || password.text.isEmpty) {
-      setState(
-        () =>
-            error = context.strings.text('Username and password are required.'),
-      );
-      return;
-    }
     try {
-      await widget.state.login(name, password.text);
+      if (loginMode == _LoginMode.usernamePassword) {
+        if (name.isEmpty || password.text.isEmpty) {
+          setState(
+            () => error = context.strings.text(
+              'Username and password are required.',
+            ),
+          );
+          return;
+        }
+        await widget.state.login(name, password.text);
+      } else if (loginMode == _LoginMode.emailPassword) {
+        final email = loginEmail.text.trim();
+        if (!_looksLikeEmail(email) || password.text.isEmpty) {
+          setState(
+            () => error = context.strings.text(
+              'Email and password are required.',
+            ),
+          );
+          return;
+        }
+        await widget.state.loginByEmail(email, password.text);
+      } else {
+        final email = loginEmail.text.trim();
+        final code = loginCode.text.trim();
+        if (!_looksLikeEmail(email)) {
+          setState(
+            () => error = context.strings.text('Please enter a valid email.'),
+          );
+          return;
+        }
+        if (code.length != 6) {
+          setState(
+            () =>
+                error = context.strings.text('Please enter the 6-digit code.'),
+          );
+          return;
+        }
+        await widget.state.loginByCode(email, code);
+      }
       if (mounted) {
         await loadAccounts();
       }
     } catch (err) {
       if (!widget.state.needsEmailVerification) {
         setState(() => error = err.toString());
+      }
+    }
+  }
+
+  Future<void> sendLoginCode() async {
+    final strings = context.strings;
+    if (!ensureLegalAccepted()) {
+      return;
+    }
+    final email = loginEmail.text.trim();
+    if (!_looksLikeEmail(email)) {
+      setState(() => error = strings.text('Please enter a valid email.'));
+      return;
+    }
+    setState(() {
+      sendingLoginCode = true;
+      error = null;
+      message = null;
+    });
+    try {
+      final response = await widget.state.sendLoginCode(email);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        loginCodeExpiresIn = response.expiresIn <= 0 ? 600 : response.expiresIn;
+        message = strings.format(
+          'Code sent. It expires in {minutes} minutes.',
+          {'minutes': _durationMinutesLabel(loginCodeExpiresIn)},
+        );
+      });
+      startLoginCodeCountdown(response.resendAfter);
+    } catch (err) {
+      if (mounted) {
+        setState(() => error = err.toString());
+      }
+    } finally {
+      if (mounted) {
+        setState(() => sendingLoginCode = false);
       }
     }
   }
@@ -1363,6 +1480,16 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
+  Future<void> openRestoreAccount() async {
+    if (!ensureLegalAccepted()) {
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (context) => _RestoreAccountDialog(state: widget.state),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final strings = context.strings;
@@ -1394,27 +1521,124 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                   const SizedBox(height: 32),
-                  TextField(
-                    controller: username,
-                    textInputAction: TextInputAction.next,
-                    decoration: InputDecoration(
-                      labelText: strings.text('Username'),
-                      prefixIcon: const Icon(Icons.person_outline),
-                      border: const OutlineInputBorder(),
-                    ),
+                  SegmentedButton<_LoginMode>(
+                    segments: [
+                      ButtonSegment(
+                        value: _LoginMode.usernamePassword,
+                        icon: const Icon(Icons.person_outline),
+                        label: Text(strings.text('Username')),
+                      ),
+                      ButtonSegment(
+                        value: _LoginMode.emailPassword,
+                        icon: const Icon(Icons.alternate_email),
+                        label: Text(strings.text('Email')),
+                      ),
+                      ButtonSegment(
+                        value: _LoginMode.emailCode,
+                        icon: const Icon(Icons.pin_outlined),
+                        label: Text(strings.text('Code')),
+                      ),
+                    ],
+                    selected: {loginMode},
+                    onSelectionChanged: widget.state.loading
+                        ? null
+                        : (selection) => changeLoginMode(selection.first),
                   ),
                   const SizedBox(height: 14),
-                  TextField(
-                    controller: password,
-                    focusNode: passwordFocus,
-                    obscureText: true,
-                    onSubmitted: (_) => submit(),
-                    decoration: InputDecoration(
-                      labelText: strings.text('Password'),
-                      prefixIcon: const Icon(Icons.lock_outline),
-                      border: const OutlineInputBorder(),
+                  if (loginMode == _LoginMode.usernamePassword) ...[
+                    TextField(
+                      controller: username,
+                      textInputAction: TextInputAction.next,
+                      decoration: InputDecoration(
+                        labelText: strings.text('Username'),
+                        prefixIcon: const Icon(Icons.person_outline),
+                        border: const OutlineInputBorder(),
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 14),
+                  ] else ...[
+                    TextField(
+                      controller: loginEmail,
+                      keyboardType: TextInputType.emailAddress,
+                      textInputAction: loginMode == _LoginMode.emailCode
+                          ? TextInputAction.next
+                          : TextInputAction.next,
+                      decoration: InputDecoration(
+                        labelText: strings.text('Email'),
+                        prefixIcon: const Icon(Icons.alternate_email),
+                        border: const OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                  ],
+                  if (loginMode == _LoginMode.emailCode) ...[
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: _EmailCodeTextField(
+                            controller: loginCode,
+                            label: strings.text('Email code'),
+                            onSubmitted: (_) => submit(),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        SizedBox(
+                          height: _emailCodeControlHeight,
+                          child: OutlinedButton(
+                            style: _emailCodeButtonStyle(),
+                            onPressed:
+                                canSendLoginCode &&
+                                    !widget.state.loading &&
+                                    !sendingLoginCode
+                                ? sendLoginCode
+                                : null,
+                            child: Text(
+                              loginCodeResendRemaining > 0
+                                  ? strings.format('Resend in {seconds}s', {
+                                      'seconds': loginCodeResendRemaining,
+                                    })
+                                  : strings.text('Send code'),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      strings.format('Code expires in {minutes} minutes.', {
+                        'minutes': _durationMinutesLabel(loginCodeExpiresIn),
+                      }),
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      strings.text(
+                        'If the code expires or fails too many times, request a new code.',
+                      ),
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ] else
+                    TextField(
+                      controller: password,
+                      focusNode: passwordFocus,
+                      obscureText: true,
+                      onSubmitted: (_) => submit(),
+                      decoration: InputDecoration(
+                        labelText: strings.text('Password'),
+                        prefixIcon: const Icon(Icons.lock_outline),
+                        border: const OutlineInputBorder(),
+                      ),
+                    ),
+                  if (message != null) ...[
+                    const SizedBox(height: 14),
+                    Text(
+                      message!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                  ],
                   if (error != null) ...[
                     const SizedBox(height: 14),
                     Text(
@@ -1442,6 +1666,12 @@ class _LoginScreenState extends State<LoginScreen> {
                           )
                         : const Icon(Icons.login),
                     label: Text(strings.text('Login')),
+                  ),
+                  const SizedBox(height: 8),
+                  TextButton.icon(
+                    onPressed: widget.state.loading ? null : openRestoreAccount,
+                    icon: const Icon(Icons.restore),
+                    label: Text(strings.text('Restore deleted account')),
                   ),
                   const SizedBox(height: 10),
                   if (loadingAccounts)
@@ -1793,6 +2023,188 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _RestoreAccountDialog extends StatefulWidget {
+  const _RestoreAccountDialog({required this.state});
+
+  final CsacAppState state;
+
+  @override
+  State<_RestoreAccountDialog> createState() => _RestoreAccountDialogState();
+}
+
+class _RestoreAccountDialogState extends State<_RestoreAccountDialog> {
+  final email = TextEditingController();
+  final token = TextEditingController();
+  bool sending = false;
+  bool restoring = false;
+  String? error;
+  String? message;
+
+  @override
+  void dispose() {
+    email.dispose();
+    token.dispose();
+    super.dispose();
+  }
+
+  Future<void> sendRestoreCode() async {
+    final strings = context.strings;
+    final targetEmail = email.text.trim();
+    if (!_looksLikeEmail(targetEmail)) {
+      setState(() => error = strings.text('Please enter a valid email.'));
+      return;
+    }
+    setState(() {
+      sending = true;
+      error = null;
+      message = null;
+    });
+    try {
+      await widget.state.requestRestoreAccount(targetEmail);
+      if (mounted) {
+        setState(
+          () => message = strings.text(
+            'Restore email sent. Check your inbox for the restore code.',
+          ),
+        );
+      }
+    } catch (err) {
+      if (mounted) {
+        setState(() => error = err.toString());
+      }
+    } finally {
+      if (mounted) {
+        setState(() => sending = false);
+      }
+    }
+  }
+
+  Future<void> restore() async {
+    final strings = context.strings;
+    final targetEmail = email.text.trim();
+    final restoreToken = token.text.trim();
+    if (!_looksLikeEmail(targetEmail)) {
+      setState(() => error = strings.text('Please enter a valid email.'));
+      return;
+    }
+    if (restoreToken.isEmpty) {
+      setState(() => error = strings.text('Please enter the restore code.'));
+      return;
+    }
+    setState(() {
+      restoring = true;
+      error = null;
+      message = null;
+    });
+    try {
+      await widget.state.restoreAccount(targetEmail, restoreToken);
+      if (!mounted) {
+        return;
+      }
+      final messenger = ScaffoldMessenger.of(context);
+      Navigator.of(context).pop();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(strings.text('Account restored. Please log in again.')),
+        ),
+      );
+    } catch (err) {
+      if (mounted) {
+        setState(() => error = err.toString());
+      }
+    } finally {
+      if (mounted) {
+        setState(() => restoring = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    final busy = sending || restoring;
+    return AlertDialog(
+      title: Text(strings.text('Restore deleted account')),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              strings.text(
+                'Accounts in the 14-day cooling period can be restored by email.',
+              ),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: email,
+              keyboardType: TextInputType.emailAddress,
+              textInputAction: TextInputAction.next,
+              decoration: InputDecoration(
+                labelText: strings.text('Email'),
+                prefixIcon: const Icon(Icons.alternate_email),
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: token,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => restore(),
+              decoration: InputDecoration(
+                labelText: strings.text('Restore code'),
+                prefixIcon: const Icon(Icons.key_outlined),
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            if (message != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                message!,
+                style: TextStyle(color: Theme.of(context).colorScheme.primary),
+              ),
+            ],
+            if (error != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: busy ? null : () => Navigator.of(context).pop(),
+          child: Text(strings.text('Cancel')),
+        ),
+        OutlinedButton(
+          onPressed: busy ? null : sendRestoreCode,
+          child: sending
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Text(strings.text('Send restore code')),
+        ),
+        FilledButton(
+          onPressed: busy ? null : restore,
+          child: restoring
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Text(strings.text('Restore account')),
+        ),
+      ],
     );
   }
 }

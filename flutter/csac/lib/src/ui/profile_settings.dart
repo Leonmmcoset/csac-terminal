@@ -10,6 +10,35 @@ class ProfileScreen extends StatelessWidget {
     final user = state.user;
     final counts = state.notificationCounts;
     final strings = context.strings;
+    final colors = Theme.of(context).colorScheme;
+
+    List<Widget> separatedTiles(List<Widget> tiles) {
+      return [
+        for (var i = 0; i < tiles.length; i++) ...[
+          tiles[i],
+          if (i != tiles.length - 1) const Divider(height: 1),
+        ],
+      ];
+    }
+
+    Widget actionTile({
+      required IconData icon,
+      required String title,
+      required VoidCallback? onTap,
+      Color? color,
+    }) {
+      return ListTile(
+        enabled: onTap != null,
+        leading: Icon(icon, color: color),
+        title: Text(
+          title,
+          style: color == null ? null : TextStyle(color: color),
+        ),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: onTap,
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(title: Text(strings.text('Me'))),
       body: SafeArea(
@@ -68,6 +97,45 @@ class ProfileScreen extends StatelessWidget {
             const SizedBox(height: 12),
             Card(
               elevation: 0,
+              child: _RoundedInkClip(
+                child: Column(
+                  children: separatedTiles([
+                    actionTile(
+                      icon: Icons.settings_outlined,
+                      title: strings.text('Settings'),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => SettingsScreen(state: state),
+                          ),
+                        );
+                      },
+                    ),
+                    actionTile(
+                      icon: Icons.qr_code_2_outlined,
+                      title: strings.text('My QR code'),
+                      onTap: user == null
+                          ? null
+                          : () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder: (_) => UserQrScreen(state: state),
+                                ),
+                              );
+                            },
+                    ),
+                    actionTile(
+                      icon: Icons.sync,
+                      title: strings.text('Refresh all'),
+                      onTap: () => unawaited(state.refreshHome()),
+                    ),
+                  ]),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Card(
+              elevation: 0,
               child: Column(
                 children: [
                   ListTile(
@@ -103,42 +171,20 @@ class ProfileScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 12),
-            FilledButton.icon(
-              onPressed: state.refreshHome,
-              icon: const Icon(Icons.sync),
-              label: Text(strings.text('Refresh all')),
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: user == null
-                  ? null
-                  : () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => UserQrScreen(state: state),
-                        ),
-                      );
-                    },
-              icon: const Icon(Icons.qr_code_2_outlined),
-              label: Text(strings.text('My QR code')),
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => SettingsScreen(state: state),
-                  ),
-                );
-              },
-              icon: const Icon(Icons.settings_outlined),
-              label: Text(strings.text('Settings')),
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: () => confirmLogout(context, state),
-              icon: const Icon(Icons.logout),
-              label: Text(strings.text('Logout')),
+            Card(
+              elevation: 0,
+              child: _RoundedInkClip(
+                child: Column(
+                  children: separatedTiles([
+                    actionTile(
+                      icon: Icons.logout,
+                      title: strings.text('Logout'),
+                      color: colors.error,
+                      onTap: () => confirmLogout(context, state),
+                    ),
+                  ]),
+                ),
+              ),
             ),
           ],
         ),
@@ -337,13 +383,20 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
     final messenger = ScaffoldMessenger.of(context);
     setState(() => deletingAccount = true);
     try {
-      await widget.state.deleteAccount();
+      final coolingDays = await widget.state.deleteAccount();
       if (!mounted) {
         return;
       }
       navigator.popUntil((route) => route.isFirst);
       messenger.showSnackBar(
-        SnackBar(content: Text(strings.text('Account deleted.'))),
+        SnackBar(
+          content: Text(
+            strings.format(
+              'Account deletion started. You can restore it within {days} days.',
+              {'days': coolingDays},
+            ),
+          ),
+        ),
       );
     } catch (err) {
       if (mounted) {
@@ -515,7 +568,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                   ),
                   subtitle: Text(
                     strings.text(
-                      'Permanently delete this account and owned groups.',
+                      'Start account deletion with a 14-day restore period.',
                     ),
                   ),
                   trailing: deletingAccount
@@ -581,7 +634,7 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
         children: [
           Text(
             strings.text(
-              'This will permanently delete your account, messages and owned groups. This cannot be undone.',
+              'This starts account deletion. Your account stays restorable for 14 days before permanent deletion.',
             ),
           ),
           const SizedBox(height: 12),
@@ -2012,10 +2065,59 @@ const apiDocEndpoints = <ApiDocEndpoint>[
     route: 'auth/login',
     method: ApiDocMethod.post,
     summary: 'Login',
-    description: 'Log in with username, password and client platform id.',
+    description:
+        'Log in with username, password and client platform id. v2.1.1 also checks cooling-period and permanently deleted accounts.',
     params: [
       ApiDocParam(name: 'username', description: 'Username', required: true),
       ApiDocParam(name: 'pwd', description: 'Password', required: true),
+      ApiDocParam(
+        name: 'platform',
+        description: 'Client platform id, for example flutter-leon-1.0.0',
+        required: true,
+      ),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Auth',
+    route: 'auth/login_by_email',
+    method: ApiDocMethod.post,
+    summary: 'Email password login',
+    description:
+        'Log in with email, password and client platform id. Deleted accounts in the cooling period can be restored first.',
+    params: [
+      ApiDocParam(name: 'email', description: 'Email address', required: true),
+      ApiDocParam(name: 'pwd', description: 'Password', required: true),
+      ApiDocParam(
+        name: 'platform',
+        description: 'Client platform id, for example flutter-leon-1.0.0',
+        required: true,
+      ),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Auth',
+    route: 'auth/send_login_code',
+    method: ApiDocMethod.post,
+    summary: 'Send login code',
+    description:
+        'Send a 6-digit email login code. Codes are valid for about 10 minutes and resend cooldown is normally 60 seconds.',
+    params: [
+      ApiDocParam(name: 'email', description: 'Email address', required: true),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Auth',
+    route: 'auth/login_by_code',
+    method: ApiDocMethod.post,
+    summary: 'Email code login',
+    description: 'Log in with email, 6-digit email code and platform id.',
+    params: [
+      ApiDocParam(name: 'email', description: 'Email address', required: true),
+      ApiDocParam(
+        name: 'email_code',
+        description: '6-digit email login code',
+        required: true,
+      ),
       ApiDocParam(
         name: 'platform',
         description: 'Client platform id, for example flutter-leon-1.0.0',
@@ -2092,6 +2194,43 @@ const apiDocEndpoints = <ApiDocEndpoint>[
     description: 'Clear the current server session.',
   ),
   ApiDocEndpoint(
+    group: 'Auth',
+    route: 'auth/request_restore',
+    method: ApiDocMethod.post,
+    summary: 'Request account restore',
+    description:
+        'Send an account restore token to the registered email for accounts inside the 14-day deletion cooling period.',
+    params: [
+      ApiDocParam(name: 'email', description: 'Email address', required: true),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Auth',
+    route: 'auth/restore_account',
+    method: ApiDocMethod.post,
+    summary: 'Restore account',
+    description: 'Restore a deleted account by email and restore token.',
+    params: [
+      ApiDocParam(name: 'email', description: 'Email address', required: true),
+      ApiDocParam(
+        name: 'restore_token',
+        description: 'Restore token from email',
+        required: true,
+      ),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Admin',
+    route: 'admin/restore_account',
+    method: ApiDocMethod.post,
+    summary: 'Admin restore account',
+    description:
+        'Admin-only manual restore for an account inside the deletion cooling period.',
+    params: [
+      ApiDocParam(name: 'uid', description: 'Target user UID', required: true),
+    ],
+  ),
+  ApiDocEndpoint(
     group: 'User',
     route: 'user/get_info',
     method: ApiDocMethod.get,
@@ -2152,7 +2291,8 @@ const apiDocEndpoints = <ApiDocEndpoint>[
     route: 'user/delete_account',
     method: ApiDocMethod.post,
     summary: 'Delete account',
-    description: 'Permanently delete the current account and owned groups.',
+    description:
+        'Start account deletion. v2.1.1 keeps data for a 14-day cooling period and returns cooling_period_days.',
   ),
   ApiDocEndpoint(
     group: 'User',
@@ -2328,14 +2468,16 @@ const apiDocEndpoints = <ApiDocEndpoint>[
     route: 'group/get_public_list',
     method: ApiDocMethod.get,
     summary: 'Public groups',
-    description: 'List public groups.',
+    description:
+        'List public groups. Groups with allow_search=0 are omitted in v2.1.1.',
   ),
   ApiDocEndpoint(
     group: 'Group',
     route: 'group/get_group_view_info',
     method: ApiDocMethod.get,
     summary: 'Group profile',
-    description: 'Get group profile and membership state.',
+    description:
+        'Get group profile and membership state. Returns allow_search; when allow_search=0 non-members receive 404.',
     params: [
       ApiDocParam(
         name: 'room_id',
@@ -2391,7 +2533,8 @@ const apiDocEndpoints = <ApiDocEndpoint>[
     route: 'group/apply_join',
     method: ApiDocMethod.post,
     summary: 'Apply to join group',
-    description: 'Send a join request or join by invite code.',
+    description:
+        'Send a join request or join by invite code. Groups with allow_search=0 reject active join and require member invitation or QR code.',
     params: [
       ApiDocParam(
         name: 'room_id',
@@ -2477,7 +2620,8 @@ const apiDocEndpoints = <ApiDocEndpoint>[
     route: 'group/update_settings',
     method: ApiDocMethod.post,
     summary: 'Update group settings',
-    description: 'Update join mode, invite permissions and group visibility.',
+    description:
+        'Update join mode, invite permissions and group visibility. allow_search=0 hides the group from public list, group ID search and active join.',
     params: [
       ApiDocParam(
         name: 'room_id',
@@ -2490,6 +2634,10 @@ const apiDocEndpoints = <ApiDocEndpoint>[
       ApiDocParam(name: 'answer', description: 'Join answer'),
       ApiDocParam(name: 'show_in_list', description: '0 or 1'),
       ApiDocParam(name: 'allow_invite', description: '0 or 1'),
+      ApiDocParam(
+        name: 'allow_search',
+        description: '1 allows search, 0 hides active join',
+      ),
     ],
   ),
   ApiDocEndpoint(

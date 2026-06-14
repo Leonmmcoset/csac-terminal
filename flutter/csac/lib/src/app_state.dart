@@ -194,6 +194,52 @@ class CsacAppState extends ChangeNotifier {
     }
   }
 
+  Future<void> loginByEmail(String email, String password) async {
+    loading = true;
+    error = null;
+    needsEmailVerification = false;
+    notifyListeners();
+    try {
+      final loggedIn = await client.loginByEmail(
+        email,
+        password,
+        platform: await currentClientPlatform(),
+      );
+      await _finishAuthenticatedSession(loggedIn, username: email);
+    } on CsacEmailVerificationRequiredException catch (err) {
+      _handleEmailVerificationRequired(err);
+    } catch (err) {
+      error = err.toString();
+      rethrow;
+    } finally {
+      loading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> loginByCode(String email, String emailCode) async {
+    loading = true;
+    error = null;
+    needsEmailVerification = false;
+    notifyListeners();
+    try {
+      final loggedIn = await client.loginByCode(
+        email,
+        emailCode,
+        platform: await currentClientPlatform(),
+      );
+      await _finishAuthenticatedSession(loggedIn, username: email);
+    } on CsacEmailVerificationRequiredException catch (err) {
+      _handleEmailVerificationRequired(err);
+    } catch (err) {
+      error = err.toString();
+      rethrow;
+    } finally {
+      loading = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> register({
     required String username,
     required String nickname,
@@ -235,6 +281,18 @@ class CsacAppState extends ChangeNotifier {
 
   Future<EmailCodeResponse> sendEmailBindCode(String email) {
     return client.sendEmailBindCode(email);
+  }
+
+  Future<EmailCodeResponse> sendLoginCode(String email) {
+    return client.sendLoginCode(email);
+  }
+
+  Future<void> requestRestoreAccount(String email) {
+    return client.requestRestoreAccount(email);
+  }
+
+  Future<void> restoreAccount(String email, String restoreToken) {
+    return client.restoreAccount(email, restoreToken);
   }
 
   Future<void> verifyEmailBindCode(String email, String emailCode) async {
@@ -553,11 +611,11 @@ class CsacAppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> deleteAccount() async {
+  Future<int> deleteAccount() async {
     final previousUser = user;
     final previousServerUrl = client.baseUrl;
     try {
-      await client.deleteAccount();
+      return await client.deleteAccount();
     } finally {
       await _clearLocalSessionState(
         previousUser: previousUser,
@@ -1312,6 +1370,7 @@ class CsacAppState extends ChangeNotifier {
     required String answer,
     required bool showPublic,
     required bool allowInvite,
+    required bool allowSearch,
   }) async {
     await client.updateGroupSettings(
       roomId,
@@ -1321,6 +1380,7 @@ class CsacAppState extends ChangeNotifier {
       answer: answer,
       showPublic: showPublic,
       allowInvite: allowInvite,
+      allowSearch: allowSearch,
     );
     await syncConversations();
   }

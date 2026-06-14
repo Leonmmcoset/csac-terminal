@@ -135,6 +135,21 @@ void main() {
     configureApiAssetBaseUrl(CsacApiClient.defaultBaseUrl);
   });
 
+  test('group profile parses search visibility', () {
+    final hidden = GroupProfile.fromJson({
+      'room_id': 5,
+      'room_name': 'Hidden',
+      'allow_search': 0,
+    });
+    final defaultVisible = GroupProfile.fromJson({
+      'room_id': 6,
+      'room_name': 'Visible',
+    });
+
+    expect(hidden.allowSearch, isFalse);
+    expect(defaultVisible.allowSearch, isTrue);
+  });
+
   test('deep links parse tab and chat aliases', () {
     expect(
       parseCsacDeepLink(Uri.parse('csacflutterleon://home')).action,
