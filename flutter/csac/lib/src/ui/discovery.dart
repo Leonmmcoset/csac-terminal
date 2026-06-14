@@ -503,7 +503,7 @@ class _SpacePostCard extends StatelessWidget {
             ),
             if (post.content.trim().isNotEmpty) ...[
               const SizedBox(height: 12),
-              SelectableText(post.content.trim()),
+              _SpaceMarkdownContent(text: post.content.trim()),
             ],
             if (post.images.isNotEmpty) ...[
               const SizedBox(height: 12),
@@ -637,7 +637,7 @@ class _SpaceReplyTile extends StatelessWidget {
                 ),
                 if (reply.content.trim().isNotEmpty) ...[
                   const SizedBox(height: 4),
-                  SelectableText(reply.content.trim()),
+                  _SpaceMarkdownContent(text: reply.content.trim()),
                 ],
                 if (reply.images.isNotEmpty) ...[
                   const SizedBox(height: 8),
@@ -676,6 +676,395 @@ class _SpaceReplyTile extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _SpaceMarkdownContent extends StatelessWidget {
+  const _SpaceMarkdownContent({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return _ChatMarkdownText(
+      text: text,
+      textColor: colors.onSurface,
+      secondaryTextColor: colors.onSurfaceVariant,
+    );
+  }
+}
+
+class _SpaceMarkdownEditor extends StatefulWidget {
+  const _SpaceMarkdownEditor({
+    required this.controller,
+    required this.hintText,
+  });
+
+  final TextEditingController controller;
+  final String hintText;
+
+  @override
+  State<_SpaceMarkdownEditor> createState() => _SpaceMarkdownEditorState();
+}
+
+class _SpaceMarkdownEditorState extends State<_SpaceMarkdownEditor> {
+  final focusNode = FocusNode();
+  bool preview = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(handleTextChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant _SpaceMarkdownEditor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(handleTextChanged);
+      widget.controller.addListener(handleTextChanged);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(handleTextChanged);
+    focusNode.dispose();
+    super.dispose();
+  }
+
+  void handleTextChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  TextSelection safeSelection() {
+    final selection = widget.controller.selection;
+    final textLength = widget.controller.text.length;
+    if (!selection.isValid) {
+      return TextSelection.collapsed(offset: textLength);
+    }
+    final start = selection.start.clamp(0, textLength);
+    final end = selection.end.clamp(0, textLength);
+    return TextSelection(baseOffset: start, extentOffset: end);
+  }
+
+  void replaceSelection(
+    String replacement, {
+    required int selectedStart,
+    required int selectedEnd,
+  }) {
+    final text = widget.controller.text;
+    final selection = safeSelection();
+    final start = math.min(selection.start, selection.end);
+    final end = math.max(selection.start, selection.end);
+    widget.controller.value = TextEditingValue(
+      text: text.replaceRange(start, end, replacement),
+      selection: TextSelection(
+        baseOffset: selectedStart,
+        extentOffset: selectedEnd,
+      ),
+    );
+    focusNode.requestFocus();
+  }
+
+  void wrapSelection(String prefix, String suffix, String placeholder) {
+    final text = widget.controller.text;
+    final selection = safeSelection();
+    final start = math.min(selection.start, selection.end);
+    final end = math.max(selection.start, selection.end);
+    final selected = text.substring(start, end);
+    final body = selected.isEmpty ? placeholder : selected;
+    final replacement = '$prefix$body$suffix';
+    final selectedStart = start + prefix.length;
+    replaceSelection(
+      replacement,
+      selectedStart: selectedStart,
+      selectedEnd: selectedStart + body.length,
+    );
+  }
+
+  void insertBlock(String before, String after, String placeholder) {
+    final text = widget.controller.text;
+    final selection = safeSelection();
+    final start = math.min(selection.start, selection.end);
+    final end = math.max(selection.start, selection.end);
+    final selected = text.substring(start, end);
+    final body = selected.isEmpty ? placeholder : selected;
+    final replacement = '$before$body$after';
+    final selectedStart = start + before.length;
+    replaceSelection(
+      replacement,
+      selectedStart: selectedStart,
+      selectedEnd: selectedStart + body.length,
+    );
+  }
+
+  void prefixSelectedLines(String Function(int index) prefixForLine) {
+    final text = widget.controller.text;
+    final selection = safeSelection();
+    final start = math.min(selection.start, selection.end);
+    final end = math.max(selection.start, selection.end);
+    final lineStart = text.lastIndexOf('\n', math.max(0, start - 1)) + 1;
+    var lineEnd = text.indexOf('\n', end);
+    if (lineEnd < 0) {
+      lineEnd = text.length;
+    }
+    final segment = text.substring(lineStart, lineEnd);
+    final lines = segment.split('\n');
+    final replacement = [
+      for (var i = 0; i < lines.length; i++) '${prefixForLine(i)}${lines[i]}',
+    ].join('\n');
+    widget.controller.value = TextEditingValue(
+      text: text.replaceRange(lineStart, lineEnd, replacement),
+      selection: TextSelection(
+        baseOffset: lineStart,
+        extentOffset: lineStart + replacement.length,
+      ),
+    );
+    focusNode.requestFocus();
+  }
+
+  void insertLink() {
+    final strings = context.strings;
+    final text = widget.controller.text;
+    final selection = safeSelection();
+    final start = math.min(selection.start, selection.end);
+    final end = math.max(selection.start, selection.end);
+    final selected = text.substring(start, end);
+    final label = selected.isEmpty ? strings.text('Text') : selected;
+    const url = 'https://';
+    final replacement = '[$label]($url)';
+    widget.controller.value = TextEditingValue(
+      text: text.replaceRange(start, end, replacement),
+      selection: TextSelection(
+        baseOffset: start + label.length + 3,
+        extentOffset: start + label.length + 3 + url.length,
+      ),
+    );
+    focusNode.requestFocus();
+  }
+
+  void applyAction(_SpaceMarkdownAction action) {
+    final strings = context.strings;
+    switch (action) {
+      case _SpaceMarkdownAction.bold:
+        wrapSelection('**', '**', strings.text('Text'));
+        break;
+      case _SpaceMarkdownAction.italic:
+        wrapSelection('*', '*', strings.text('Text'));
+        break;
+      case _SpaceMarkdownAction.strikethrough:
+        wrapSelection('~~', '~~', strings.text('Text'));
+        break;
+      case _SpaceMarkdownAction.heading:
+        prefixSelectedLines((_) => '## ');
+        break;
+      case _SpaceMarkdownAction.quote:
+        prefixSelectedLines((_) => '> ');
+        break;
+      case _SpaceMarkdownAction.bulletList:
+        prefixSelectedLines((_) => '- ');
+        break;
+      case _SpaceMarkdownAction.numberedList:
+        prefixSelectedLines((index) => '${index + 1}. ');
+        break;
+      case _SpaceMarkdownAction.inlineCode:
+        wrapSelection('`', '`', strings.text('code'));
+        break;
+      case _SpaceMarkdownAction.codeBlock:
+        insertBlock('```\n', '\n```', strings.text('code'));
+        break;
+      case _SpaceMarkdownAction.link:
+        insertLink();
+        break;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    final colors = Theme.of(context).colorScheme;
+    final content = widget.controller.text.trim();
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border.all(color: colors.outlineVariant),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ColoredBox(
+              color: colors.surfaceContainerHighest.withValues(alpha: 0.45),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+                child: Row(
+                  children: [
+                    SegmentedButton<bool>(
+                      segments: [
+                        ButtonSegment<bool>(
+                          value: false,
+                          icon: const Icon(Icons.edit_outlined),
+                          label: Text(strings.text('Edit')),
+                        ),
+                        ButtonSegment<bool>(
+                          value: true,
+                          icon: const Icon(Icons.visibility_outlined),
+                          label: Text(strings.text('Preview')),
+                        ),
+                      ],
+                      selected: {preview},
+                      showSelectedIcon: false,
+                      onSelectionChanged: (value) {
+                        setState(() => preview = value.first);
+                        if (!preview) {
+                          focusNode.requestFocus();
+                        }
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            for (final action in _SpaceMarkdownAction.values)
+                              _SpaceMarkdownActionButton(
+                                action: action,
+                                enabled: !preview,
+                                onPressed: () => applyAction(action),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const Divider(height: 1),
+            if (preview)
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 150),
+                  child: content.isEmpty
+                      ? _EmptyPanel(
+                          message: strings.text('Nothing to preview.'),
+                        )
+                      : _SpaceMarkdownContent(text: content),
+                ),
+              )
+            else
+              TextField(
+                controller: widget.controller,
+                focusNode: focusNode,
+                minLines: 5,
+                maxLines: 10,
+                autofocus: true,
+                keyboardType: TextInputType.multiline,
+                textInputAction: TextInputAction.newline,
+                decoration: InputDecoration(
+                  hintText: widget.hintText,
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.all(12),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+enum _SpaceMarkdownAction {
+  bold,
+  italic,
+  strikethrough,
+  heading,
+  quote,
+  bulletList,
+  numberedList,
+  inlineCode,
+  codeBlock,
+  link,
+}
+
+class _SpaceMarkdownActionButton extends StatelessWidget {
+  const _SpaceMarkdownActionButton({
+    required this.action,
+    required this.enabled,
+    required this.onPressed,
+  });
+
+  final _SpaceMarkdownAction action;
+  final bool enabled;
+  final VoidCallback onPressed;
+
+  String tooltip(CsacStrings strings) {
+    switch (action) {
+      case _SpaceMarkdownAction.bold:
+        return strings.text('Bold');
+      case _SpaceMarkdownAction.italic:
+        return strings.text('Italic');
+      case _SpaceMarkdownAction.strikethrough:
+        return strings.text('Strikethrough');
+      case _SpaceMarkdownAction.heading:
+        return strings.text('Heading');
+      case _SpaceMarkdownAction.quote:
+        return strings.text('Quote');
+      case _SpaceMarkdownAction.bulletList:
+        return strings.text('Bulleted list');
+      case _SpaceMarkdownAction.numberedList:
+        return strings.text('Numbered list');
+      case _SpaceMarkdownAction.inlineCode:
+        return strings.text('Inline code');
+      case _SpaceMarkdownAction.codeBlock:
+        return strings.text('Code block');
+      case _SpaceMarkdownAction.link:
+        return strings.text('Insert link');
+    }
+  }
+
+  IconData get icon {
+    switch (action) {
+      case _SpaceMarkdownAction.bold:
+        return Icons.format_bold;
+      case _SpaceMarkdownAction.italic:
+        return Icons.format_italic;
+      case _SpaceMarkdownAction.strikethrough:
+        return Icons.format_strikethrough;
+      case _SpaceMarkdownAction.heading:
+        return Icons.title;
+      case _SpaceMarkdownAction.quote:
+        return Icons.format_quote;
+      case _SpaceMarkdownAction.bulletList:
+        return Icons.format_list_bulleted;
+      case _SpaceMarkdownAction.numberedList:
+        return Icons.format_list_numbered;
+      case _SpaceMarkdownAction.inlineCode:
+        return Icons.code;
+      case _SpaceMarkdownAction.codeBlock:
+        return Icons.data_object;
+      case _SpaceMarkdownAction.link:
+        return Icons.link;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: tooltip(context.strings),
+      visualDensity: VisualDensity.compact,
+      iconSize: 20,
+      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+      onPressed: enabled ? onPressed : null,
+      icon: Icon(icon),
     );
   }
 }
@@ -835,15 +1224,9 @@ class _SpaceComposeSheetState extends State<_SpaceComposeSheet> {
               ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 12),
-            TextField(
+            _SpaceMarkdownEditor(
               controller: content,
-              minLines: 3,
-              maxLines: 6,
-              autofocus: true,
-              decoration: InputDecoration(
-                hintText: strings.text("What's new?"),
-                border: const OutlineInputBorder(),
-              ),
+              hintText: strings.text("What's new?"),
             ),
             const SizedBox(height: 12),
             Row(

@@ -879,5 +879,19 @@
   "Open message": "",
   "Replace {room} with the conversation ID and {message} with the message ID.": "",
   "Open search result": "",
-  "Use q to open a search result query.": ""
+  "Use q to open a search result query.": "",
+  "Edit": "",
+  "Preview": "",
+  "Bold": "",
+  "Italic": "",
+  "Strikethrough": "",
+  "Heading": "",
+  "Quote": "",
+  "Bulleted list": "",
+  "Numbered list": "",
+  "Inline code": "",
+  "Code block": "",
+  "Insert link": "",
+  "Nothing to preview.": "",
+  "code": ""
 }

@@ -3835,10 +3835,9 @@ String _groupMemberBadgeText(
 }
 
 String _escapeMarkdownHtml(String value) {
-  return value
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;');
+  // Keep `>` intact so Markdown blockquotes still parse; escaping `<` is
+  // enough to prevent inline HTML tags from being interpreted.
+  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;');
 }
 
 final highlight_core.Highlight _chatCodeHighlighter = highlight_core.Highlight()
@@ -3955,6 +3954,13 @@ String _chatCodeDisplayLanguage(String language) {
   return language == 'plaintext' ? 'CODE' : language.toUpperCase();
 }
 
+TextStyle _chatMarkdownMonospaceStyle(TextStyle style) {
+  return style.copyWith(
+    fontFamily: fontFamilyForStyle(CsacFontStyle.monospace),
+    fontFamilyFallback: fontFamilyFallbackForStyle(CsacFontStyle.monospace),
+  );
+}
+
 TextSpan _highlightChatCode(
   String code,
   String language,
@@ -3984,7 +3990,8 @@ List<InlineSpan> _chatCodeNodeSpans(
 ) {
   final spans = <InlineSpan>[];
   for (final node in nodes) {
-    final style = tokenStyles[node.className] ?? baseStyle;
+    final tokenStyle = tokenStyles[node.className];
+    final style = tokenStyle == null ? baseStyle : baseStyle.merge(tokenStyle);
     if (node.value != null) {
       spans.add(TextSpan(text: node.value, style: style));
     }
@@ -4142,11 +4149,11 @@ class _ChatMarkdownBody extends StatelessWidget {
       Colors.transparent,
     );
     final base = theme.textTheme.bodyMedium?.copyWith(color: textColor);
-    final codeStyle = base?.copyWith(
-      color: textColor,
-      fontFamily: 'monospace',
-      backgroundColor: codeBackground,
-    );
+    final codeStyle = base == null
+        ? null
+        : _chatMarkdownMonospaceStyle(
+            base.copyWith(color: textColor, backgroundColor: codeBackground),
+          );
     return MarkdownBody(
       data: _escapeMarkdownHtml(text),
       selectable: false,
@@ -4251,18 +4258,13 @@ class _ChatCodeBlockState extends State<_ChatCodeBlock> {
       colors.primary.withValues(alpha: dark ? 0.08 : 0.06),
       containerColor,
     );
-    final baseCodeStyle =
-        theme.textTheme.bodySmall?.copyWith(
-          color: dark ? const Color(0xffd6deeb) : const Color(0xff1f2937),
-          fontFamily: 'monospace',
-          height: 1.42,
-        ) ??
-        TextStyle(
-          color: textColor,
-          fontFamily: 'monospace',
-          fontSize: 13,
-          height: 1.42,
-        );
+    final baseCodeStyle = _chatMarkdownMonospaceStyle(
+      theme.textTheme.bodySmall?.copyWith(
+            color: dark ? const Color(0xffd6deeb) : const Color(0xff1f2937),
+            height: 1.42,
+          ) ??
+          TextStyle(color: textColor, fontSize: 13, height: 1.42),
+    );
     final tokenStyles = _chatCodeTokenStyles(dark);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),

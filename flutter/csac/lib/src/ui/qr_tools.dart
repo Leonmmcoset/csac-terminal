@@ -284,6 +284,7 @@ void _paintPlainQrCard(
     avatarImage: avatarImage,
     fallbackText: title,
     style: style,
+    size: 104,
   );
 }
 
@@ -384,6 +385,7 @@ void _paintHorizontalQrCard(
     avatarImage: avatarImage,
     fallbackText: title,
     style: style,
+    size: 76,
   );
 }
 
@@ -394,6 +396,7 @@ void _paintQrCenterMark(
   required ui.Image? avatarImage,
   required String fallbackText,
   required _QrCardStyle style,
+  double size = 132,
 }) {
   switch (style.centerMode) {
     case _QrCenterMode.none:
@@ -405,10 +408,11 @@ void _paintQrCenterMark(
         palette: palette,
         avatarImage: avatarImage,
         fallbackText: fallbackText,
+        size: size,
       );
       break;
     case _QrCenterMode.logo:
-      _paintQrCenterLogo(canvas, center: center, palette: palette);
+      _paintQrCenterLogo(canvas, center: center, palette: palette, size: size);
       break;
   }
 }
@@ -518,12 +522,9 @@ void _paintQrCard(
     cursorY += 32;
   }
 
+  final qrTop = math.max(610.0, cursorY + 34);
   final qrOuterRect = RRect.fromRectAndRadius(
-    Rect.fromCenter(
-      center: Offset(cardSize.width / 2, math.max(720, cursorY + 330)),
-      width: 760,
-      height: 760,
-    ),
+    Rect.fromLTWH((cardSize.width - 760) / 2, qrTop, 760, 760),
     const Radius.circular(42),
   );
   canvas.drawRRect(qrOuterRect, Paint()..color = palette.qrBackground);
@@ -555,17 +556,24 @@ void _paintQrCard(
         palette: palette,
         avatarImage: avatarImage,
         fallbackText: title,
+        size: 112,
       );
       break;
     case _QrCenterMode.logo:
-      _paintQrCenterLogo(canvas, center: qrRect.center, palette: palette);
+      _paintQrCenterLogo(
+        canvas,
+        center: qrRect.center,
+        palette: palette,
+        size: 112,
+      );
       break;
   }
 
+  final linkTop = qrOuterRect.outerRect.bottom + 42;
   _paintCenteredParagraph(
     canvas,
     link,
-    Offset(cardSize.width / 2, cardSize.height - 276),
+    Offset(cardSize.width / 2, linkTop),
     maxWidth: 780,
     style: TextStyle(
       color: palette.muted,
@@ -644,11 +652,15 @@ void _paintQrCenterAvatar(
   required _QrCardPalette palette,
   required ui.Image? avatarImage,
   required String fallbackText,
+  double size = 132,
 }) {
-  final rect = Rect.fromCenter(center: center, width: 156, height: 156);
+  final rect = Rect.fromCenter(center: center, width: size, height: size);
+  final pad = math.max(8.0, size * 0.075);
+  final outerRadius = math.max(24.0, size * 0.24);
+  final innerRadius = math.max(20.0, size * 0.19);
   final outer = RRect.fromRectAndRadius(
-    rect.inflate(12),
-    const Radius.circular(38),
+    rect.inflate(pad),
+    Radius.circular(outerRadius),
   );
   canvas.drawRRect(outer, Paint()..color = palette.qrBackground);
   canvas.drawRRect(
@@ -662,7 +674,7 @@ void _paintQrCenterAvatar(
     final imageRect = rect;
     canvas.save();
     canvas.clipRRect(
-      RRect.fromRectAndRadius(imageRect, const Radius.circular(30)),
+      RRect.fromRectAndRadius(imageRect, Radius.circular(innerRadius)),
     );
     paintImage(
       canvas: canvas,
@@ -674,17 +686,17 @@ void _paintQrCenterAvatar(
     return;
   }
   canvas.drawRRect(
-    RRect.fromRectAndRadius(rect, const Radius.circular(30)),
+    RRect.fromRectAndRadius(rect, Radius.circular(innerRadius)),
     Paint()..color = palette.primary,
   );
   _paintCenteredParagraph(
     canvas,
     _qrInitial(fallbackText),
-    Offset(center.dx, center.dy - 18),
-    maxWidth: 120,
-    style: const TextStyle(
+    Offset(center.dx, center.dy - size * 0.115),
+    maxWidth: size * 0.78,
+    style: TextStyle(
       color: Colors.white,
-      fontSize: 46,
+      fontSize: size * 0.30,
       fontWeight: FontWeight.w900,
       height: 1,
     ),
@@ -696,25 +708,29 @@ void _paintQrCenterLogo(
   Canvas canvas, {
   required Offset center,
   required _QrCardPalette palette,
+  double size = 132,
 }) {
-  final rect = Rect.fromCenter(center: center, width: 156, height: 156);
+  final rect = Rect.fromCenter(center: center, width: size, height: size);
+  final pad = math.max(8.0, size * 0.075);
+  final outerRadius = math.max(24.0, size * 0.24);
+  final innerRadius = math.max(20.0, size * 0.19);
   final outer = RRect.fromRectAndRadius(
-    rect.inflate(12),
-    const Radius.circular(38),
+    rect.inflate(pad),
+    Radius.circular(outerRadius),
   );
   canvas.drawRRect(outer, Paint()..color = palette.qrBackground);
   canvas.drawRRect(
-    RRect.fromRectAndRadius(rect, const Radius.circular(30)),
+    RRect.fromRectAndRadius(rect, Radius.circular(innerRadius)),
     Paint()..color = palette.primary,
   );
   _paintCenteredParagraph(
     canvas,
     'CsAC',
-    Offset(center.dx, center.dy - 16),
-    maxWidth: 128,
-    style: const TextStyle(
+    Offset(center.dx, center.dy - size * 0.10),
+    maxWidth: size * 0.82,
+    style: TextStyle(
       color: Colors.white,
-      fontSize: 34,
+      fontSize: size * 0.22,
       fontWeight: FontWeight.w900,
       height: 1,
     ),
@@ -822,6 +838,7 @@ class _QrCardPreview extends StatelessWidget {
     final centerImage = _qrCenterImageProvider(style, avatarUrl);
     final plain = style.theme == _QrCardTheme.plainQr;
     final horizontal = style.theme == _QrCardTheme.horizontalCard;
+    final previewCenterSize = horizontal ? 30.0 : 38.0;
     final qrBlock = DecoratedBox(
       decoration: BoxDecoration(
         color: palette.qrBackground,
@@ -854,11 +871,13 @@ class _QrCardPreview extends StatelessWidget {
                     : centerImage,
                 embeddedImageStyle: centerImage == null
                     ? null
-                    : const QrEmbeddedImageStyle(size: Size.square(42)),
+                    : QrEmbeddedImageStyle(
+                        size: Size.square(previewCenterSize),
+                      ),
                 semanticsLabel: semanticsLabel,
               ),
               if (style.centerMode == _QrCenterMode.logo)
-                _QrLogoCenterMark(palette: palette),
+                _QrLogoCenterMark(palette: palette, size: previewCenterSize),
             ],
           ),
         ),
@@ -955,16 +974,19 @@ class _QrCardPreview extends StatelessWidget {
 }
 
 class _QrLogoCenterMark extends StatelessWidget {
-  const _QrLogoCenterMark({required this.palette});
+  const _QrLogoCenterMark({required this.palette, required this.size});
 
   final _QrCardPalette palette;
+  final double size;
 
   @override
   Widget build(BuildContext context) {
+    final outerRadius = math.max(8.0, size * 0.28);
+    final innerRadius = math.max(6.0, size * 0.2);
     return DecoratedBox(
       decoration: BoxDecoration(
         color: palette.qrBackground,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(outerRadius),
         border: Border.all(color: palette.border),
       ),
       child: Padding(
@@ -972,17 +994,17 @@ class _QrLogoCenterMark extends StatelessWidget {
         child: DecoratedBox(
           decoration: BoxDecoration(
             color: palette.primary,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(innerRadius),
           ),
-          child: const SizedBox(
-            width: 42,
-            height: 42,
+          child: SizedBox(
+            width: size,
+            height: size,
             child: Center(
               child: Text(
                 'CsAC',
                 style: TextStyle(
                   color: Colors.white,
-                  fontSize: 11,
+                  fontSize: size * 0.26,
                   fontWeight: FontWeight.w900,
                   letterSpacing: 0,
                 ),
