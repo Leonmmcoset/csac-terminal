@@ -221,6 +221,16 @@ class _CsacMobileAppState extends State<CsacMobileApp>
     }
   }
 
+  Future<bool> openDeepLinkTargetFromRoute(CsacDeepLinkTarget target) async {
+    if (!target.isSupported ||
+        state.user == null ||
+        state.needsEmailVerification ||
+        locked) {
+      return false;
+    }
+    return await mainShellKey.currentState?.openDeepLinkTarget(target) ?? false;
+  }
+
   void showDeepLinkSnack(String message) {
     final context = navigatorKey.currentContext;
     final strings = context == null

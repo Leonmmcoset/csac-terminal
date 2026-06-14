@@ -174,6 +174,30 @@ void main() {
     );
     expect(shortUserProfile.action, CsacDeepLinkAction.userProfile);
     expect(shortUserProfile.id, 790);
+
+    final post = parseCsacDeepLink(Uri.parse(csacSpacePostDeepLink(88)));
+    expect(post.action, CsacDeepLinkAction.spacePost);
+    expect(post.id, 88);
+
+    final search = parseCsacDeepLink(
+      Uri.parse(csacSearchDeepLink('hello world')),
+    );
+    expect(search.action, CsacDeepLinkAction.searchResult);
+    expect(search.query, 'hello world');
+
+    final groupMessage = parseCsacDeepLink(
+      Uri.parse(csacGroupMessageDeepLink(123, 456)),
+    );
+    expect(groupMessage.action, CsacDeepLinkAction.groupMessage);
+    expect(groupMessage.id, 123);
+    expect(groupMessage.messageId, 456);
+
+    final privateMessage = parseCsacDeepLink(
+      Uri.parse('csacflutterleon://message/private/12/34'),
+    );
+    expect(privateMessage.action, CsacDeepLinkAction.privateMessage);
+    expect(privateMessage.id, 12);
+    expect(privateMessage.messageId, 34);
   });
 
   test('release version tags match app versions', () {

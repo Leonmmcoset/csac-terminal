@@ -13,6 +13,9 @@ class _MainShellState extends State<MainShell> {
   int index = 0;
   int lastUnreadChats = 0;
   Conversation? selectedConversation;
+  int? selectedFocusMessageId;
+  int? selectedSpacePostId;
+  String selectedSearchQuery = '';
   Timer? timer;
 
   @override
@@ -203,9 +206,15 @@ class _MainShellState extends State<MainShell> {
       case CsacDeepLinkAction.chats:
         return openDeepLinkTab(0);
       case CsacDeepLinkAction.space:
+        selectedSpacePostId = null;
         return openDeepLinkTab(1);
+      case CsacDeepLinkAction.spacePost:
+        return openDeepLinkSpacePost(target.id ?? 0);
       case CsacDeepLinkAction.search:
+        selectedSearchQuery = '';
         return openDeepLinkTab(2);
+      case CsacDeepLinkAction.searchResult:
+        return openDeepLinkSearch(target.query ?? '');
       case CsacDeepLinkAction.notices:
         return openDeepLinkTab(3);
       case CsacDeepLinkAction.profile:
@@ -216,6 +225,18 @@ class _MainShellState extends State<MainShell> {
         return openDeepLinkChat(ConversationType.group, target.id ?? 0);
       case CsacDeepLinkAction.privateChat:
         return openDeepLinkChat(ConversationType.private, target.id ?? 0);
+      case CsacDeepLinkAction.groupMessage:
+        return openDeepLinkChat(
+          ConversationType.group,
+          target.id ?? 0,
+          focusMessageId: target.messageId,
+        );
+      case CsacDeepLinkAction.privateMessage:
+        return openDeepLinkChat(
+          ConversationType.private,
+          target.id ?? 0,
+          focusMessageId: target.messageId,
+        );
       case CsacDeepLinkAction.unsupported:
         return false;
     }
@@ -230,7 +251,32 @@ class _MainShellState extends State<MainShell> {
     return true;
   }
 
-  Future<bool> openDeepLinkChat(ConversationType type, int id) async {
+  bool openDeepLinkSpacePost(int id) {
+    if (id <= 0) {
+      return false;
+    }
+    Navigator.of(context).popUntil((route) => route.isFirst);
+    setState(() => selectedSpacePostId = id);
+    selectDestination(1);
+    return true;
+  }
+
+  bool openDeepLinkSearch(String query) {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) {
+      return false;
+    }
+    Navigator.of(context).popUntil((route) => route.isFirst);
+    setState(() => selectedSearchQuery = trimmed);
+    selectDestination(2);
+    return true;
+  }
+
+  Future<bool> openDeepLinkChat(
+    ConversationType type,
+    int id, {
+    int? focusMessageId,
+  }) async {
     if (id <= 0) {
       return false;
     }
@@ -260,13 +306,20 @@ class _MainShellState extends State<MainShell> {
     selectDestination(0);
     final wide = MediaQuery.sizeOf(context).width >= 900;
     if (wide) {
-      setState(() => selectedConversation = opened);
+      setState(() {
+        selectedConversation = opened;
+        selectedFocusMessageId = focusMessageId;
+      });
       lastUnreadChats = totalUnreadChats();
       return true;
     }
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => ChatScreen(state: widget.state, conversation: opened),
+        builder: (_) => ChatScreen(
+          state: widget.state,
+          conversation: opened,
+          focusMessageId: focusMessageId,
+        ),
       ),
     );
     return true;
@@ -329,17 +382,24 @@ class _MainShellState extends State<MainShell> {
             ? (conversation) {
                 widget.state.markConversationRead(conversation);
                 widget.state.setActiveConversation(conversation);
-                setState(
-                  () => selectedConversation = conversation.copyWith(
-                    unreadCount: 0,
-                  ),
-                );
+                setState(() {
+                  selectedConversation = conversation.copyWith(unreadCount: 0);
+                  selectedFocusMessageId = null;
+                });
                 lastUnreadChats = totalUnreadChats();
               }
             : null,
       ),
-      SpaceFeedScreen(state: widget.state, embedded: true),
-      MessageSearchScreen(state: widget.state, embedded: true),
+      SpaceFeedScreen(
+        state: widget.state,
+        embedded: true,
+        focusPostId: selectedSpacePostId,
+      ),
+      MessageSearchScreen(
+        state: widget.state,
+        embedded: true,
+        initialQuery: selectedSearchQuery,
+      ),
       NoticeCenterScreen(state: widget.state),
       ProfileScreen(state: widget.state),
     ];
@@ -407,6 +467,7 @@ class _MainShellState extends State<MainShell> {
                         state: widget.state,
                         conversations: pages[0],
                         selectedConversation: selectedConversation,
+                        focusMessageId: selectedFocusMessageId,
                       )
                     : pages[index],
               ),
@@ -597,11 +658,13 @@ class _WideChatLayout extends StatelessWidget {
     required this.state,
     required this.conversations,
     required this.selectedConversation,
+    this.focusMessageId,
   });
 
   final CsacAppState state;
   final Widget conversations;
   final Conversation? selectedConversation;
+  final int? focusMessageId;
 
   @override
   Widget build(BuildContext context) {
@@ -617,10 +680,13 @@ class _WideChatLayout extends StatelessWidget {
           child: selected == null
               ? const _WideEmptyChatPlaceholder()
               : ChatScreen(
-                  key: ValueKey('${selected.type.name}:${selected.id}'),
+                  key: ValueKey(
+                    '${selected.type.name}:${selected.id}:${focusMessageId ?? 0}',
+                  ),
                   state: state,
                   conversation: selected,
                   embedded: true,
+                  focusMessageId: focusMessageId,
                 ),
         ),
       ],
@@ -1100,11 +1166,15 @@ class _ConversationScreenState extends State<ConversationScreen> {
         return false;
       case CsacDeepLinkAction.chats:
       case CsacDeepLinkAction.space:
+      case CsacDeepLinkAction.spacePost:
       case CsacDeepLinkAction.search:
+      case CsacDeepLinkAction.searchResult:
       case CsacDeepLinkAction.notices:
       case CsacDeepLinkAction.profile:
       case CsacDeepLinkAction.groupChat:
       case CsacDeepLinkAction.privateChat:
+      case CsacDeepLinkAction.groupMessage:
+      case CsacDeepLinkAction.privateMessage:
         return false;
     }
   }

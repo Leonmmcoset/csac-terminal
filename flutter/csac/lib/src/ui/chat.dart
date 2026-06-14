@@ -1709,6 +1709,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     context.strings,
                   ).trim().isNotEmpty,
               canScanImageQr: isMobilePlatform && message.imageUrl.isNotEmpty,
+              canShareQr: message.id > 0,
             ),
           ),
         ).whenComplete(() {
@@ -1737,6 +1738,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         break;
       case _MessageAction.selectText:
         await showSelectableMessageText(message);
+        break;
+      case _MessageAction.shareMessageQr:
+        await openMessageQr(message);
         break;
       case _MessageAction.copyImage:
         Clipboard.setData(ClipboardData(text: message.imageUrl));
@@ -1820,7 +1824,18 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       );
       return;
     }
-    final handled = await openScannedDeepLinkTarget(target);
+    final confirmed = await confirmScannedCsacUri(context, uri);
+    if (!mounted || confirmed == null) {
+      return;
+    }
+    final confirmedTarget = parseCsacDeepLink(confirmed);
+    if (!confirmedTarget.isSupported) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(strings.text('Unsupported CsAC link.'))),
+      );
+      return;
+    }
+    final handled = await openScannedDeepLinkTarget(confirmedTarget);
     if (!mounted) {
       return;
     }
@@ -1844,11 +1859,29 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         return openDeepLinkedConversation(ConversationType.group, target.id);
       case CsacDeepLinkAction.privateChat:
         return openDeepLinkedConversation(ConversationType.private, target.id);
+      case CsacDeepLinkAction.groupMessage:
+        return openDeepLinkedConversation(
+          ConversationType.group,
+          target.id,
+          focusMessageId: target.messageId,
+        );
+      case CsacDeepLinkAction.privateMessage:
+        return openDeepLinkedConversation(
+          ConversationType.private,
+          target.id,
+          focusMessageId: target.messageId,
+        );
       case CsacDeepLinkAction.chats:
       case CsacDeepLinkAction.space:
+      case CsacDeepLinkAction.spacePost:
       case CsacDeepLinkAction.search:
+      case CsacDeepLinkAction.searchResult:
       case CsacDeepLinkAction.notices:
       case CsacDeepLinkAction.profile:
+        return context
+                .findAncestorStateOfType<_CsacMobileAppState>()
+                ?.openDeepLinkTargetFromRoute(target) ??
+            false;
       case CsacDeepLinkAction.unsupported:
         return false;
     }
@@ -1856,14 +1889,26 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   Future<bool> openDeepLinkedConversation(
     ConversationType type,
-    int? id,
-  ) async {
+    int? id, {
+    int? focusMessageId,
+  }) async {
     final conversationId = id ?? 0;
     if (conversationId <= 0) {
       return false;
     }
     if (widget.conversation.type == type &&
         widget.conversation.id == conversationId) {
+      if (focusMessageId != null && focusMessageId > 0) {
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => ChatScreen(
+              state: widget.state,
+              conversation: widget.conversation,
+              focusMessageId: focusMessageId,
+            ),
+          ),
+        );
+      }
       return true;
     }
     var conversation = widget.state.conversations
@@ -1903,10 +1948,45 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     unawaited(widget.state.markConversationRead(opened));
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => ChatScreen(state: widget.state, conversation: opened),
+        builder: (_) => ChatScreen(
+          state: widget.state,
+          conversation: opened,
+          focusMessageId: focusMessageId,
+        ),
       ),
     );
     return true;
+  }
+
+  Future<void> openMessageQr(ChatMessage message) {
+    final link = widget.conversation.type == ConversationType.group
+        ? csacGroupMessageDeepLink(widget.conversation.id, message.id)
+        : csacPrivateMessageDeepLink(widget.conversation.id, message.id);
+    final strings = context.strings;
+    return Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => CsacQrShareScreen(
+          appBarTitle: strings.text('Message QR code'),
+          link: link,
+          cardTitle: widget.conversation.name,
+          cardSubtitle: strings.format('Message #{id} from {name}', {
+            'id': message.id,
+            'name': message.sender,
+          }),
+          avatarUrl: displayedConversation.avatar,
+          fallbackIcon: widget.conversation.type == ConversationType.group
+              ? Icons.groups_rounded
+              : Icons.person_rounded,
+          helperText: strings.text('Scan to open this message in CsAC.'),
+          semanticsLabel: strings.text('CsAC message QR code'),
+          shareTitle: strings.text('Share message QR code'),
+          shareSubject: strings.text('CsAC message QR code'),
+          fileName:
+              'csac-message-${widget.conversation.type.name}-${widget.conversation.id}-${message.id}.png',
+          copySnackText: strings.text('Message link copied.'),
+        ),
+      ),
+    );
   }
 
   Future<void> showSelectableMessageText(ChatMessage message) async {
@@ -6383,6 +6463,7 @@ enum _MessageAction {
   select,
   copyText,
   selectText,
+  shareMessageQr,
   copyImage,
   openImage,
   downloadImage,
@@ -6427,6 +6508,7 @@ class _MessageActionSheet extends StatelessWidget {
     required this.canEssence,
     required this.canSelectText,
     required this.canScanImageQr,
+    required this.canShareQr,
   });
 
   final ChatMessage message;
@@ -6434,6 +6516,7 @@ class _MessageActionSheet extends StatelessWidget {
   final bool canEssence;
   final bool canSelectText;
   final bool canScanImageQr;
+  final bool canShareQr;
 
   @override
   Widget build(BuildContext context) {
@@ -6464,6 +6547,14 @@ class _MessageActionSheet extends StatelessWidget {
               leading: const Icon(Icons.text_fields),
               title: Text(strings.text('Select message text')),
               onTap: () => Navigator.of(context).pop(_MessageAction.selectText),
+            ),
+          if (canShareQr)
+            ListTile(
+              leading: const Icon(Icons.qr_code_2_outlined),
+              title: Text(strings.text('Share message QR code')),
+              subtitle: Text('#${message.id}'),
+              onTap: () =>
+                  Navigator.of(context).pop(_MessageAction.shareMessageQr),
             ),
           if (message.imageUrl.isNotEmpty)
             ListTile(

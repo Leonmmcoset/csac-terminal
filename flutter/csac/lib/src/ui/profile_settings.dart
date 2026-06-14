@@ -3178,6 +3178,30 @@ const _urlSchemeDocEntries = <_UrlSchemeDocEntry>[
       '$csacDeepLinkScheme://user/{id}',
     ],
   ),
+  _UrlSchemeDocEntry(
+    titleKey: 'Open space post',
+    descriptionKey: 'Replace {id} with the post ID.',
+    examples: [
+      '$csacDeepLinkScheme://space/post/{id}',
+      '$csacDeepLinkScheme://post/{id}',
+    ],
+  ),
+  _UrlSchemeDocEntry(
+    titleKey: 'Open message',
+    descriptionKey:
+        'Replace {room} with the conversation ID and {message} with the message ID.',
+    examples: [
+      '$csacDeepLinkScheme://chat/group/{room}/message/{message}',
+      '$csacDeepLinkScheme://chat/private/{room}/message/{message}',
+      '$csacDeepLinkScheme://message/group/{room}/{message}',
+      '$csacDeepLinkScheme://message/private/{room}/{message}',
+    ],
+  ),
+  _UrlSchemeDocEntry(
+    titleKey: 'Open search result',
+    descriptionKey: 'Use q to open a search result query.',
+    examples: ['$csacDeepLinkScheme://search?q=hello'],
+  ),
 ];
 
 class UrlSchemeDocsScreen extends StatelessWidget {

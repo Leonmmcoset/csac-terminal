@@ -5,10 +5,12 @@ class SpaceFeedScreen extends StatefulWidget {
     super.key,
     required this.state,
     this.embedded = false,
+    this.focusPostId,
   });
 
   final CsacAppState state;
   final bool embedded;
+  final int? focusPostId;
 
   @override
   State<SpaceFeedScreen> createState() => _SpaceFeedScreenState();
@@ -23,6 +25,8 @@ class _SpaceFeedScreenState extends State<SpaceFeedScreen> {
   String? error;
   int page = 1;
   int total = 0;
+  int? lastFocusedPostId;
+  final postKeys = <int, GlobalKey>{};
 
   bool get hasMore {
     if (posts.isEmpty) {
@@ -68,6 +72,7 @@ class _SpaceFeedScreenState extends State<SpaceFeedScreen> {
         total = loaded.total;
         posts = refresh ? loaded.posts : _mergeSpacePosts(posts, loaded.posts);
       });
+      scheduleFocusPost();
     } catch (err) {
       if (mounted) {
         setState(() => error = err.toString());
@@ -240,6 +245,64 @@ class _SpaceFeedScreenState extends State<SpaceFeedScreen> {
   }
 
   @override
+  void didUpdateWidget(covariant SpaceFeedScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.focusPostId != widget.focusPostId) {
+      scheduleFocusPost(force: true);
+    }
+  }
+
+  void scheduleFocusPost({bool force = false}) {
+    final postId = widget.focusPostId ?? 0;
+    if (postId <= 0) {
+      return;
+    }
+    if (!force &&
+        lastFocusedPostId == postId &&
+        postKeys[postId]?.currentContext != null) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      final keyContext = postKeys[postId]?.currentContext;
+      if (keyContext == null) {
+        return;
+      }
+      lastFocusedPostId = postId;
+      Scrollable.ensureVisible(
+        keyContext,
+        duration: const Duration(milliseconds: 360),
+        curve: Curves.easeOutCubic,
+        alignment: 0.08,
+      );
+    });
+  }
+
+  Future<void> openPostQr(SpacePost post) {
+    final strings = context.strings;
+    return Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => CsacQrShareScreen(
+          appBarTitle: strings.text('Post QR code'),
+          link: csacSpacePostDeepLink(post.id),
+          cardTitle: post.displayName,
+          cardSubtitle: strings.format('Post #{id}', {'id': post.id}),
+          avatarUrl: post.avatar,
+          fallbackIcon: Icons.public_rounded,
+          helperText: strings.text('Scan to open this post in CsAC.'),
+          semanticsLabel: strings.text('CsAC post QR code'),
+          shareTitle: strings.text('Share post QR code'),
+          shareSubject: strings.text('CsAC post QR code'),
+          fileName: 'csac-post-${post.id}.png',
+          copySnackText: strings.text('Post link copied.'),
+        ),
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     final strings = context.strings;
     final body = Column(
@@ -303,20 +366,28 @@ class _SpaceFeedScreenState extends State<SpaceFeedScreen> {
                         post.senderUid,
                         'space-post-${post.id}',
                       );
+                      final postKey = postKeys.putIfAbsent(
+                        post.id,
+                        () => GlobalKey(),
+                      );
                       return _MotionListItem(
                         index: index,
-                        child: _SpacePostCard(
-                          post: post,
-                          currentUserId: widget.state.user?.uid ?? 0,
-                          avatarHeroTag: avatarHeroTag,
-                          onOpenUser: () => openPostUser(post, avatarHeroTag),
-                          onLike: () => toggleLike(post),
-                          onReply: () => replyToPost(post),
-                          onDelete: () => deletePost(post),
-                          onReplyLike: toggleLike,
-                          onReplyDelete: deletePost,
-                          onReplyOpenUser: (reply, tag) =>
-                              openPostUser(reply, tag),
+                        child: KeyedSubtree(
+                          key: postKey,
+                          child: _SpacePostCard(
+                            post: post,
+                            currentUserId: widget.state.user?.uid ?? 0,
+                            avatarHeroTag: avatarHeroTag,
+                            onOpenUser: () => openPostUser(post, avatarHeroTag),
+                            onLike: () => toggleLike(post),
+                            onReply: () => replyToPost(post),
+                            onDelete: () => deletePost(post),
+                            onShareQr: () => openPostQr(post),
+                            onReplyLike: toggleLike,
+                            onReplyDelete: deletePost,
+                            onReplyOpenUser: (reply, tag) =>
+                                openPostUser(reply, tag),
+                          ),
                         ),
                       );
                     },
@@ -355,6 +426,7 @@ class _SpacePostCard extends StatelessWidget {
     required this.onLike,
     required this.onReply,
     required this.onDelete,
+    required this.onShareQr,
     required this.onReplyLike,
     required this.onReplyDelete,
     required this.onReplyOpenUser,
@@ -367,6 +439,7 @@ class _SpacePostCard extends StatelessWidget {
   final VoidCallback onLike;
   final VoidCallback onReply;
   final VoidCallback onDelete;
+  final VoidCallback onShareQr;
   final ValueChanged<SpacePost> onReplyLike;
   final ValueChanged<SpacePost> onReplyDelete;
   final void Function(SpacePost post, Object avatarHeroTag) onReplyOpenUser;
@@ -453,6 +526,11 @@ class _SpacePostCard extends StatelessWidget {
                   onPressed: onReply,
                   icon: const Icon(Icons.reply_outlined),
                   label: Text(strings.text('Reply')),
+                ),
+                TextButton.icon(
+                  onPressed: onShareQr,
+                  icon: const Icon(Icons.qr_code_2_outlined),
+                  label: Text(strings.text('QR code')),
                 ),
               ],
             ),
@@ -1509,10 +1587,12 @@ class MessageSearchScreen extends StatefulWidget {
     super.key,
     required this.state,
     this.embedded = false,
+    this.initialQuery = '',
   });
 
   final CsacAppState state;
   final bool embedded;
+  final String initialQuery;
 
   @override
   State<MessageSearchScreen> createState() => _MessageSearchScreenState();
@@ -1529,7 +1609,19 @@ class _MessageSearchScreenState extends State<MessageSearchScreen> {
   @override
   void initState() {
     super.initState();
+    search.text = widget.initialQuery.trim();
     runSearch();
+  }
+
+  @override
+  void didUpdateWidget(covariant MessageSearchScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final nextQuery = widget.initialQuery.trim();
+    if (nextQuery != oldWidget.initialQuery.trim() &&
+        nextQuery != search.text.trim()) {
+      search.text = nextQuery;
+      runSearch();
+    }
   }
 
   @override
@@ -1591,6 +1683,39 @@ class _MessageSearchScreenState extends State<MessageSearchScreen> {
           state: widget.state,
           conversation: result.conversation,
           focusMessageId: result.message.id,
+        ),
+      ),
+    );
+  }
+
+  Future<void> openResultQr(MessageSearchResult result) {
+    final strings = context.strings;
+    final conversation = result.conversation;
+    final message = result.message;
+    final link = conversation.type == ConversationType.group
+        ? csacGroupMessageDeepLink(conversation.id, message.id)
+        : csacPrivateMessageDeepLink(conversation.id, message.id);
+    return Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => CsacQrShareScreen(
+          appBarTitle: strings.text('Search result QR code'),
+          link: link,
+          cardTitle: conversation.name,
+          cardSubtitle: strings.format('Message #{id} from {name}', {
+            'id': message.id,
+            'name': message.sender,
+          }),
+          avatarUrl: conversation.avatar,
+          fallbackIcon: conversation.type == ConversationType.group
+              ? Icons.groups_rounded
+              : Icons.person_rounded,
+          helperText: strings.text('Scan to open this search result in CsAC.'),
+          semanticsLabel: strings.text('CsAC search result QR code'),
+          shareTitle: strings.text('Share search result QR code'),
+          shareSubject: strings.text('CsAC search result QR code'),
+          fileName:
+              'csac-search-result-${conversation.type.name}-${conversation.id}-${message.id}.png',
+          copySnackText: strings.text('Search result link copied.'),
         ),
       ),
     );
@@ -1690,6 +1815,7 @@ class _MessageSearchScreenState extends State<MessageSearchScreen> {
                         result: result,
                         preferences: widget.state.preferences,
                         onTap: () => openResult(result),
+                        onShareQr: () => openResultQr(result),
                       ),
                     );
                   },
@@ -1735,11 +1861,13 @@ class _SearchResultTile extends StatelessWidget {
     required this.result,
     required this.preferences,
     required this.onTap,
+    required this.onShareQr,
   });
 
   final MessageSearchResult result;
   final CsacPreferences preferences;
   final VoidCallback onTap;
+  final VoidCallback onShareQr;
 
   @override
   Widget build(BuildContext context) {
@@ -1785,11 +1913,23 @@ class _SearchResultTile extends StatelessWidget {
               ),
             ],
           ),
-          trailing: message.imageUrl.isNotEmpty
-              ? const Icon(Icons.image_outlined)
-              : message.isEssence
-              ? const Icon(Icons.star_outline)
-              : const Icon(Icons.chevron_right),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                tooltip: context.strings.text('Share QR code'),
+                onPressed: onShareQr,
+                icon: const Icon(Icons.qr_code_2_outlined),
+              ),
+              Icon(
+                message.imageUrl.isNotEmpty
+                    ? Icons.image_outlined
+                    : message.isEssence
+                    ? Icons.star_outline
+                    : Icons.chevron_right,
+              ),
+            ],
+          ),
         ),
       ),
     );

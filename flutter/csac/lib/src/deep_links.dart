@@ -3,20 +3,26 @@ const csacDeepLinkScheme = 'csacflutterleon';
 enum CsacDeepLinkAction {
   chats,
   space,
+  spacePost,
   search,
+  searchResult,
   notices,
   profile,
   userProfile,
   groupChat,
   privateChat,
+  groupMessage,
+  privateMessage,
   unsupported,
 }
 
 class CsacDeepLinkTarget {
-  const CsacDeepLinkTarget(this.action, {this.id});
+  const CsacDeepLinkTarget(this.action, {this.id, this.messageId, this.query});
 
   final CsacDeepLinkAction action;
   final int? id;
+  final int? messageId;
+  final String? query;
 
   bool get isSupported => action != CsacDeepLinkAction.unsupported;
 }
@@ -47,9 +53,32 @@ CsacDeepLinkTarget parseCsacDeepLink(Uri uri) {
     case 'discovery':
     case 'dynamic':
     case 'feed':
+      if (segments.length > 1 &&
+          (segments[1] == 'post' ||
+              segments[1] == 'status' ||
+              segments[1] == 'dynamic')) {
+        return _typedDeepLinkTarget(
+          CsacDeepLinkAction.spacePost,
+          segments.length > 2 ? segments[2] : uri.queryParameters['id'],
+        );
+      }
       return const CsacDeepLinkTarget(CsacDeepLinkAction.space);
+    case 'post':
+    case 'status':
+      return _typedDeepLinkTarget(
+        CsacDeepLinkAction.spacePost,
+        segments.length > 1 ? segments[1] : uri.queryParameters['id'],
+      );
     case 'search':
     case 'find':
+      final query = (uri.queryParameters['q'] ?? uri.queryParameters['query'])
+          ?.trim();
+      if (query != null && query.isNotEmpty) {
+        return CsacDeepLinkTarget(
+          CsacDeepLinkAction.searchResult,
+          query: query,
+        );
+      }
       return const CsacDeepLinkTarget(CsacDeepLinkAction.search);
     case 'notice':
     case 'notices':
@@ -73,18 +102,29 @@ CsacDeepLinkTarget parseCsacDeepLink(Uri uri) {
     case 'chat':
     case 'conversation':
       return _chatLinkTarget(uri, segments);
+    case 'message':
+    case 'msg':
+      return _messageLinkTarget(uri, segments);
     case 'group':
     case 'room':
-      return _typedDeepLinkTarget(
+      return _chatOrMessageTarget(
         CsacDeepLinkAction.groupChat,
+        CsacDeepLinkAction.groupMessage,
         segments.length > 1 ? segments[1] : uri.queryParameters['id'],
+        segments.length > 3 && segments[2] == 'message'
+            ? segments[3]
+            : uri.queryParameters['message_id'],
       );
     case 'private':
     case 'friend':
     case 'user':
-      return _typedDeepLinkTarget(
+      return _chatOrMessageTarget(
         CsacDeepLinkAction.privateChat,
+        CsacDeepLinkAction.privateMessage,
         segments.length > 1 ? segments[1] : uri.queryParameters['id'],
+        segments.length > 3 && segments[2] == 'message'
+            ? segments[3]
+            : uri.queryParameters['message_id'],
       );
   }
   return const CsacDeepLinkTarget(CsacDeepLinkAction.unsupported);
@@ -96,6 +136,25 @@ String csacUserProfileDeepLink(int uid) {
 
 String csacGroupChatDeepLink(int roomId) {
   return '$csacDeepLinkScheme://chat/group/$roomId';
+}
+
+String csacSpacePostDeepLink(int postId) {
+  return '$csacDeepLinkScheme://space/post/$postId';
+}
+
+String csacSearchDeepLink(String query) {
+  final encoded = Uri.encodeQueryComponent(query.trim());
+  return encoded.isEmpty
+      ? '$csacDeepLinkScheme://search'
+      : '$csacDeepLinkScheme://search?q=$encoded';
+}
+
+String csacGroupMessageDeepLink(int roomId, int messageId) {
+  return '$csacDeepLinkScheme://chat/group/$roomId/message/$messageId';
+}
+
+String csacPrivateMessageDeepLink(int uid, int messageId) {
+  return '$csacDeepLinkScheme://chat/private/$uid/message/$messageId';
 }
 
 List<String> csacDeepLinkSegments(Uri uri) {
@@ -128,16 +187,84 @@ CsacDeepLinkTarget _chatLinkTarget(Uri uri, List<String> segments) {
       ? segments[1]
       : (uri.queryParameters['type'] ?? uri.queryParameters['kind'] ?? '');
   final id = segments.length > 2 ? segments[2] : uri.queryParameters['id'];
+  final messageId = segments.length > 4 && segments[3] == 'message'
+      ? segments[4]
+      : (uri.queryParameters['message_id'] ??
+            uri.queryParameters['msg_id'] ??
+            uri.queryParameters['mid']);
   switch (type.toLowerCase()) {
     case 'group':
     case 'room':
-      return _typedDeepLinkTarget(CsacDeepLinkAction.groupChat, id);
+      return _chatOrMessageTarget(
+        CsacDeepLinkAction.groupChat,
+        CsacDeepLinkAction.groupMessage,
+        id,
+        messageId,
+      );
     case 'private':
     case 'friend':
     case 'user':
-      return _typedDeepLinkTarget(CsacDeepLinkAction.privateChat, id);
+      return _chatOrMessageTarget(
+        CsacDeepLinkAction.privateChat,
+        CsacDeepLinkAction.privateMessage,
+        id,
+        messageId,
+      );
   }
   return const CsacDeepLinkTarget(CsacDeepLinkAction.unsupported);
+}
+
+CsacDeepLinkTarget _messageLinkTarget(Uri uri, List<String> segments) {
+  final type = segments.length > 1
+      ? segments[1]
+      : (uri.queryParameters['type'] ?? uri.queryParameters['kind'] ?? '');
+  final id = segments.length > 2
+      ? segments[2]
+      : (uri.queryParameters['room_id'] ??
+            uri.queryParameters['uid'] ??
+            uri.queryParameters['id']);
+  final messageId = segments.length > 3
+      ? segments[3]
+      : (uri.queryParameters['message_id'] ??
+            uri.queryParameters['msg_id'] ??
+            uri.queryParameters['mid']);
+  switch (type.toLowerCase()) {
+    case 'group':
+    case 'room':
+      return _chatOrMessageTarget(
+        CsacDeepLinkAction.groupChat,
+        CsacDeepLinkAction.groupMessage,
+        id,
+        messageId,
+      );
+    case 'private':
+    case 'friend':
+    case 'user':
+      return _chatOrMessageTarget(
+        CsacDeepLinkAction.privateChat,
+        CsacDeepLinkAction.privateMessage,
+        id,
+        messageId,
+      );
+  }
+  return const CsacDeepLinkTarget(CsacDeepLinkAction.unsupported);
+}
+
+CsacDeepLinkTarget _chatOrMessageTarget(
+  CsacDeepLinkAction chatAction,
+  CsacDeepLinkAction messageAction,
+  String? rawId,
+  String? rawMessageId,
+) {
+  final id = int.tryParse((rawId ?? '').trim()) ?? 0;
+  if (id <= 0) {
+    return const CsacDeepLinkTarget(CsacDeepLinkAction.unsupported);
+  }
+  final messageId = int.tryParse((rawMessageId ?? '').trim()) ?? 0;
+  if (messageId <= 0) {
+    return CsacDeepLinkTarget(chatAction, id: id);
+  }
+  return CsacDeepLinkTarget(messageAction, id: id, messageId: messageId);
 }
 
 CsacDeepLinkTarget _profileLinkTarget(Uri uri, List<String> segments) {
