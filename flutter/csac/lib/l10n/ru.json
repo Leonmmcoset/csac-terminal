@@ -875,5 +875,19 @@
   "Open message": "Open message",
   "Replace {room} with the conversation ID and {message} with the message ID.": "Replace {room} with the conversation ID and {message} with the message ID.",
   "Open search result": "Open search result",
-  "Use q to open a search result query.": "Use q to open a search result query."
+  "Use q to open a search result query.": "Use q to open a search result query.",
+  "Edit": "Edit",
+  "Preview": "Preview",
+  "Bold": "Bold",
+  "Italic": "Italic",
+  "Strikethrough": "Strikethrough",
+  "Heading": "Heading",
+  "Quote": "Quote",
+  "Bulleted list": "Bulleted list",
+  "Numbered list": "Numbered list",
+  "Inline code": "Inline code",
+  "Code block": "Code block",
+  "Insert link": "Insert link",
+  "Nothing to preview.": "Nothing to preview.",
+  "code": "code"
 }
