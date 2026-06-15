@@ -50,6 +50,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'src/app_state.dart';
+import 'src/acop_client.dart';
 import 'src/api_client.dart';
 import 'src/api_protocol.dart';
 import 'src/deep_links.dart';
@@ -64,6 +65,7 @@ import 'src/preferences.dart';
 import 'src/update_checker.dart';
 
 part 'src/ui/app_shell.dart';
+part 'src/ui/acop_platform.dart';
 part 'src/ui/home.dart';
 part 'src/ui/discovery.dart';
 part 'src/ui/notifications.dart';

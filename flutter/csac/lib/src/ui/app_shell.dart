@@ -594,7 +594,7 @@ class _CsacMobileAppState extends State<CsacMobileApp>
             final framed = _MaterialYouDesktopWindowFrame(
               title: CsacStrings(
                 localeForLanguage(state.preferences.language),
-              ).text('CsAC'),
+              ).text(state.isAcopMode ? 'CsAC Open Platform' : 'CsAC'),
               child: _DesktopCommandPaletteHost(
                 state: state,
                 navigatorKey: navigatorKey,
@@ -622,6 +622,16 @@ class _CsacMobileAppState extends State<CsacMobileApp>
                           key: const ValueKey<String>('bootstrap'),
                           status: state.restoreStatus,
                         )
+                      : state.isAcopMode
+                      ? state.hasAcopDeveloper
+                            ? AcopPlatformShell(
+                                key: const ValueKey<String>('acop-platform'),
+                                state: state,
+                              )
+                            : AcopLoginScreen(
+                                key: const ValueKey<String>('acop-login'),
+                                state: state,
+                              )
                       : state.needsEmailVerification
                       ? EmailVerificationScreen(
                           key: const ValueKey<String>('email-verification'),
@@ -1490,6 +1500,14 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
+  Future<void> switchToDeveloperPlatform() async {
+    setState(() {
+      error = null;
+      message = null;
+    });
+    await widget.state.switchClientMode(AppClientMode.acop);
+  }
+
   @override
   Widget build(BuildContext context) {
     final strings = context.strings;
@@ -1737,6 +1755,14 @@ class _LoginScreenState extends State<LoginScreen> {
                     onPressed: widget.state.loading ? null : openRegister,
                     icon: const Icon(Icons.person_add_alt),
                     label: Text(strings.text('Register account')),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: widget.state.loading
+                        ? null
+                        : switchToDeveloperPlatform,
+                    icon: const Icon(Icons.integration_instructions_outlined),
+                    label: Text(strings.text('Switch to developer platform')),
                   ),
                   const SizedBox(height: 12),
                   OutlinedButton.icon(

@@ -550,6 +550,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                   _UserProfileHeaderSliver(
                     title: loaded.displayName,
                     profile: loaded,
+                    isBot: member?.isBot == true,
                     avatarHeroTag: widget.avatarHeroTag,
                     loading: loading,
                     onRefresh: load,
@@ -811,6 +812,7 @@ class _UserProfileHeaderSliver extends StatelessWidget {
   const _UserProfileHeaderSliver({
     required this.title,
     this.profile,
+    this.isBot = false,
     this.avatarHeroTag,
     required this.loading,
     required this.onRefresh,
@@ -818,6 +820,7 @@ class _UserProfileHeaderSliver extends StatelessWidget {
 
   final String title;
   final UserProfile? profile;
+  final bool isBot;
   final Object? avatarHeroTag;
   final bool loading;
   final Future<void> Function()? onRefresh;
@@ -850,6 +853,7 @@ class _UserProfileHeaderSliver extends StatelessWidget {
           ? _UserProfileHeaderSpace(
               title: title,
               profile: loaded,
+              isBot: isBot,
               avatarHeroTag: avatarHeroTag,
               expandedHeight: expandedHeight,
             )
@@ -862,12 +866,14 @@ class _UserProfileHeaderSpace extends StatelessWidget {
   const _UserProfileHeaderSpace({
     required this.title,
     required this.profile,
+    required this.isBot,
     required this.avatarHeroTag,
     required this.expandedHeight,
   });
 
   final String title;
   final UserProfile profile;
+  final bool isBot;
   final Object? avatarHeroTag;
   final double expandedHeight;
 
@@ -876,9 +882,10 @@ class _UserProfileHeaderSpace extends StatelessWidget {
     final topPadding = MediaQuery.paddingOf(context).top;
     final reduceMotion = _MotionPreference.reduceOf(context);
     final colors = Theme.of(context).colorScheme;
-    final subtitle = profile.subtitle.isEmpty
+    final profileSubtitle = profile.subtitle;
+    final subtitle = profileSubtitle.isEmpty
         ? 'UID ${profile.uid}'
-        : profile.subtitle;
+        : profileSubtitle;
     return LayoutBuilder(
       builder: (context, constraints) {
         final minHeight = topPadding + kToolbarHeight;
@@ -1012,6 +1019,10 @@ class _UserProfileHeaderSpace extends StatelessWidget {
                         ],
                       ),
                     ),
+                    if (profile.isBot || isBot) ...[
+                      const SizedBox(height: 6),
+                      _UserProfileBotLabel(opacity: subtitleOpacity),
+                    ],
                     IgnorePointer(
                       child: Opacity(
                         opacity: subtitleOpacity,
@@ -1103,6 +1114,38 @@ class _ProfileHeaderBackdrop extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _UserProfileBotLabel extends StatelessWidget {
+  const _UserProfileBotLabel({required this.opacity});
+
+  final double opacity;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Opacity(
+        opacity: opacity,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.18),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.28)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+            child: Text(
+              context.strings.text('Bot'),
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

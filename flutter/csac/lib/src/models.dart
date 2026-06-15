@@ -294,6 +294,7 @@ class UserProfile {
     this.remark = '',
     this.onlineStatus = '',
     this.platform = 'none',
+    this.isBot = false,
     this.isFriend = false,
     this.canAddFriend = false,
   });
@@ -305,6 +306,7 @@ class UserProfile {
   final String remark;
   final String onlineStatus;
   final String platform;
+  final bool isBot;
   final bool isFriend;
   final bool canAddFriend;
 
@@ -322,6 +324,7 @@ class UserProfile {
     return [
       if (username.isNotEmpty) '@$username',
       if (onlineStatus.isNotEmpty) onlineStatus,
+      if (isBot) 'Bot',
       if (platform.trim().isNotEmpty && platform != 'none') platform,
       if (isFriend) 'friend',
     ].join(' | ');
@@ -340,6 +343,7 @@ class UserProfile {
         'platform',
         'client_platform',
       ]).ifEmpty('none'),
+      isBot: firstBool(json, const ['is_bot', 'isBot', 'bot']),
       isFriend: asBool(json['is_friend']),
       canAddFriend: asBool(json['can_add_friend']),
     );
@@ -1371,6 +1375,7 @@ class GroupMember {
     this.memberLevel = 0,
     this.isOwner = false,
     this.isAdmin = false,
+    this.isBot = false,
   });
 
   final int uid;
@@ -1385,6 +1390,7 @@ class GroupMember {
   final int memberLevel;
   final bool isOwner;
   final bool isAdmin;
+  final bool isBot;
 
   String get subtitle {
     return [
@@ -1405,6 +1411,7 @@ class GroupMember {
       role,
       roleLabel,
       memberTitle,
+      if (isBot) 'bot',
       if (memberLevel > 0) 'Lv.$memberLevel',
       if (memberLevel > 0) '$memberLevel',
       onlineStatus,
@@ -1476,6 +1483,7 @@ class GroupMember {
         'is_group_admin',
         'admin',
       ]),
+      isBot: firstBool(json, const ['is_bot', 'isBot', 'bot']),
     );
   }
 }

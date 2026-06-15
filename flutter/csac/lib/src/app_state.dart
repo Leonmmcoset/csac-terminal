@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import 'api_client.dart';
+import 'acop_client.dart';
 import 'api_protocol.dart';
 import 'l10n.dart';
 import 'local_cache.dart';
@@ -51,9 +52,11 @@ class AppLogFile {
 class CsacAppState extends ChangeNotifier {
   CsacAppState({
     CsacApiClient? client,
+    AcopApiClient? acopClient,
     CsacLocalCache? cache,
     CsacPreferences initialPreferences = const CsacPreferences(),
   }) : client = client ?? CsacApiClient(),
+       acopClient = acopClient ?? AcopApiClient(),
        cache = cache ?? CsacLocalCache() {
     preferences = initialPreferences;
     restoreStatus = CsacStrings(
@@ -64,9 +67,11 @@ class CsacAppState extends ChangeNotifier {
   }
 
   final CsacApiClient client;
+  final AcopApiClient acopClient;
   final CsacLocalCache cache;
 
   CsacUser? user;
+  AcopDeveloper? acopDeveloper;
   List<Conversation> conversations = const <Conversation>[];
   NotificationCounts notificationCounts = const NotificationCounts();
   CsacPreferences preferences = const CsacPreferences();
@@ -88,6 +93,15 @@ class CsacAppState extends ChangeNotifier {
   String get currentUserAvatar => user?.avatar.trim() ?? '';
 
   ApiHttpProtocol get activeHttpProtocol => client.lastHttpProtocol;
+
+  AppClientMode get clientMode => preferences.clientMode;
+
+  bool get isAcopMode => clientMode == AppClientMode.acop;
+
+  String get activeServerUrl =>
+      isAcopMode ? acopClient.baseUrl : client.baseUrl;
+
+  bool get hasAcopDeveloper => acopDeveloper != null;
 
   void _handleHttpProtocolChanged(ApiHttpProtocol protocol) {
     notifyListeners();
@@ -126,20 +140,18 @@ class CsacAppState extends ChangeNotifier {
       await cache.open();
       preferences = await CsacPreferences.load();
       await preloadCsacStrings(preferences.language);
-      _applyPreferredServer();
+      await _applyPreferredServer();
       await client.loadSession();
+      await acopClient.loadSession();
       restoreStatus = CsacStrings(
         localeForLanguage(preferences.language),
       ).text('Checking saved session...');
       notifyListeners();
-      user = await client.currentUser();
-      await cache.saveUser(user!);
-      offlineMode = false;
-      sessionExpired = false;
-      await loadCachedConversations();
-      await syncConversations();
-      await refreshNotificationCounts();
-      unawaited(loadEmojiStickers(forceRefresh: true));
+      if (isAcopMode) {
+        await _restoreAcopSession();
+      } else {
+        await _restoreCsacSession();
+      }
     } on CsacEmailVerificationRequiredException catch (err) {
       _handleEmailVerificationRequired(err);
     } on CsacAuthException catch (err) {
@@ -285,6 +297,97 @@ class CsacAppState extends ChangeNotifier {
 
   Future<EmailCodeResponse> sendLoginCode(String email) {
     return client.sendLoginCode(email);
+  }
+
+  Future<void> acopSendCode(String email, String purpose) {
+    return acopClient.sendCode(email: email, purpose: purpose);
+  }
+
+  Future<void> acopLogin(String email, String password) async {
+    loading = true;
+    error = null;
+    notifyListeners();
+    try {
+      preferences = preferences.copyWith(clientMode: AppClientMode.acop);
+      await preferences.save();
+      await _applyPreferredServer();
+      acopDeveloper = await acopClient.login(email: email, password: password);
+      error = null;
+    } catch (err) {
+      error = err.toString();
+      rethrow;
+    } finally {
+      loading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> acopLoginByCode(String email, String code) async {
+    loading = true;
+    error = null;
+    notifyListeners();
+    try {
+      preferences = preferences.copyWith(clientMode: AppClientMode.acop);
+      await preferences.save();
+      await _applyPreferredServer();
+      acopDeveloper = await acopClient.loginByCode(email: email, code: code);
+      error = null;
+    } catch (err) {
+      error = err.toString();
+      rethrow;
+    } finally {
+      loading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> acopRegister({
+    required String email,
+    required String password,
+    required String developerName,
+    required String code,
+    required String csacUsername,
+    required String csacPassword,
+  }) async {
+    loading = true;
+    error = null;
+    notifyListeners();
+    try {
+      preferences = preferences.copyWith(clientMode: AppClientMode.acop);
+      await preferences.save();
+      await _applyPreferredServer();
+      acopDeveloper = await acopClient.register(
+        email: email,
+        password: password,
+        developerName: developerName,
+        code: code,
+        csacUsername: csacUsername,
+        csacPassword: csacPassword,
+      );
+      error = null;
+    } catch (err) {
+      error = err.toString();
+      rethrow;
+    } finally {
+      loading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> acopLogout() async {
+    loading = true;
+    error = null;
+    notifyListeners();
+    try {
+      await acopClient.logout();
+      acopDeveloper = null;
+    } catch (err) {
+      error = err.toString();
+      rethrow;
+    } finally {
+      loading = false;
+      notifyListeners();
+    }
   }
 
   Future<void> requestRestoreAccount(String email) {
@@ -545,6 +648,23 @@ class CsacAppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> switchClientMode(AppClientMode mode) async {
+    if (preferences.clientMode == mode) {
+      return;
+    }
+    preferences = preferences.copyWith(clientMode: mode);
+    await preferences.save();
+    await _applyPreferredServer();
+    await client.loadSession();
+    await acopClient.loadSession();
+    if (mode == AppClientMode.acop) {
+      await _restoreAcopSession();
+    } else {
+      await _restoreCsacSession();
+    }
+    notifyListeners();
+  }
+
   bool verifyAppLockPin(String pin) {
     return preferences.verifyAppLockPin(pin);
   }
@@ -557,12 +677,12 @@ class CsacAppState extends ChangeNotifier {
         ? ''
         : normalizedUrl;
     if (normalized == preferences.serverUrl.trim()) {
-      _applyPreferredServer();
+      await _applyPreferredServer();
       return false;
     }
     preferences = preferences.copyWith(serverUrl: normalized);
     await preferences.save();
-    _applyPreferredServer();
+    await _applyPreferredServer();
     await client.clearSession();
     await cache.clear();
     await EmojiStickerStore.clear();
@@ -577,6 +697,28 @@ class CsacAppState extends ChangeNotifier {
     sessionExpired = false;
     needsEmailVerification = false;
     error = null;
+    notifyListeners();
+    return true;
+  }
+
+  Future<bool> updateAcopServerUrl(String value) async {
+    final normalizedUrl = value.trim().isEmpty
+        ? ''
+        : AcopApiClient.normalizeServerUrl(value);
+    final normalized = normalizedUrl == AcopApiClient.defaultBaseUrl
+        ? ''
+        : normalizedUrl;
+    if (normalized == preferences.acopServerUrl.trim()) {
+      await _applyPreferredServer();
+      return false;
+    }
+    preferences = preferences.copyWith(acopServerUrl: normalized);
+    await preferences.save();
+    await _applyPreferredServer();
+    await acopClient.clearSession();
+    if (isAcopMode) {
+      acopDeveloper = null;
+    }
     notifyListeners();
     return true;
   }
@@ -658,8 +800,63 @@ class CsacAppState extends ChangeNotifier {
     return client.updatePassword(oldPassword, newPassword, confirmPassword);
   }
 
-  void _applyPreferredServer() {
+  Future<void> _applyPreferredServer() async {
     client.setBaseUrl(preferences.serverUrl);
+    acopClient.setBaseUrl(preferences.acopServerUrl);
+  }
+
+  Future<void> _restoreCsacSession() async {
+    acopDeveloper = null;
+    try {
+      user = await client.currentUser();
+      await cache.saveUser(user!);
+      offlineMode = false;
+      sessionExpired = false;
+      error = null;
+      await loadCachedConversations();
+      await syncConversations();
+      await refreshNotificationCounts();
+      unawaited(loadEmojiStickers(forceRefresh: true));
+    } on CsacAuthException catch (err) {
+      await client.clearSession();
+      user = await cache.loadUser();
+      conversations = _sortConversations(await cache.loadConversations());
+      sessionExpired = true;
+      offlineMode = user != null;
+      error = user == null
+          ? err.toString()
+          : CsacStrings(
+              localeForLanguage(preferences.language),
+            ).text('Session expired. Cached history is available offline.');
+    } catch (err) {
+      user = await cache.loadUser();
+      conversations = _sortConversations(await cache.loadConversations());
+      offlineMode = user != null;
+      sessionExpired = false;
+      error = user == null ? err.toString() : null;
+    }
+  }
+
+  Future<void> _restoreAcopSession() async {
+    user = null;
+    conversations = const <Conversation>[];
+    notificationCounts = const NotificationCounts();
+    activeConversation = null;
+    emojiStickers = const <EmojiSticker>[];
+    offlineMode = false;
+    sessionExpired = false;
+    needsEmailVerification = false;
+    error = null;
+    try {
+      acopDeveloper = await acopClient.getDeveloperInfo();
+      await acopClient.saveSession();
+    } on AcopAuthException {
+      await acopClient.clearSession();
+      acopDeveloper = null;
+    } on AcopApiException catch (err) {
+      acopDeveloper = null;
+      error = err.toString();
+    }
   }
 
   Future<String> currentClientPlatform() async {
@@ -721,6 +918,16 @@ class CsacAppState extends ChangeNotifier {
       loading = false;
       notifyListeners();
     }
+  }
+
+  Future<void> refreshCurrentUserIfPossible() async {
+    if (isAcopMode) {
+      return;
+    }
+    if (user == null) {
+      return;
+    }
+    await refreshCurrentUser();
   }
 
   bool isActiveConversation(Conversation conversation) {

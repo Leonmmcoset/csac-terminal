@@ -24,6 +24,8 @@ enum GroupMemberBadgeMode { title, role }
 
 enum MobileEnterKeyBehavior { send, newline }
 
+enum AppClientMode { csac, acop }
+
 const defaultThemeColorValue = 0xff1f8a70;
 const defaultChatBubbleColorValue = 0;
 const defaultChatBubbleOpacity = 1.0;
@@ -33,6 +35,7 @@ const maxInterfaceFontScale = 1.30;
 
 class CsacPreferences {
   const CsacPreferences({
+    this.clientMode = AppClientMode.csac,
     this.themeMode = ThemeMode.system,
     this.themeColorValue = defaultThemeColorValue,
     this.language = CsacLanguage.zh,
@@ -49,6 +52,7 @@ class CsacPreferences {
     this.chatBubbleOpacity = defaultChatBubbleOpacity,
     this.chatBackgroundPath = '',
     this.serverUrl = '',
+    this.acopServerUrl = '',
     this.reduceMotion = false,
     this.showChatAvatars = true,
     this.enablePat = true,
@@ -65,6 +69,7 @@ class CsacPreferences {
     this.acceptedLegalVersion = '',
   });
 
+  static const _clientModeKey = 'csac.client_mode';
   static const _themeKey = 'csac.theme_mode';
   static const _themeColorKey = 'csac.theme_color';
   static const _languageKey = 'csac.language';
@@ -81,6 +86,7 @@ class CsacPreferences {
   static const _chatBubbleOpacityKey = 'csac.chat.bubble_opacity';
   static const _chatBackgroundPathKey = 'csac.chat_background_path';
   static const _serverUrlKey = 'csac.server_url';
+  static const _acopServerUrlKey = 'csac.acop_server_url';
   static const _reduceMotionKey = 'csac.reduce_motion';
   static const _showChatAvatarsKey = 'csac.chat.show_avatars';
   static const _enablePatKey = 'csac.chat.enable_pat';
@@ -98,6 +104,7 @@ class CsacPreferences {
   static const _localSystemNotificationsKey = 'csac.notifications.local_system';
   static const _acceptedLegalVersionKey = 'csac.legal.accepted_version';
 
+  final AppClientMode clientMode;
   final ThemeMode themeMode;
   final int themeColorValue;
   final CsacLanguage language;
@@ -114,6 +121,7 @@ class CsacPreferences {
   final double chatBubbleOpacity;
   final String chatBackgroundPath;
   final String serverUrl;
+  final String acopServerUrl;
   final bool reduceMotion;
   final bool showChatAvatars;
   final bool enablePat;
@@ -142,6 +150,7 @@ class CsacPreferences {
   }
 
   CsacPreferences copyWith({
+    AppClientMode? clientMode,
     ThemeMode? themeMode,
     int? themeColorValue,
     CsacLanguage? language,
@@ -158,6 +167,7 @@ class CsacPreferences {
     double? chatBubbleOpacity,
     String? chatBackgroundPath,
     String? serverUrl,
+    String? acopServerUrl,
     bool? reduceMotion,
     bool? showChatAvatars,
     bool? enablePat,
@@ -174,6 +184,7 @@ class CsacPreferences {
     String? acceptedLegalVersion,
   }) {
     return CsacPreferences(
+      clientMode: clientMode ?? this.clientMode,
       themeMode: themeMode ?? this.themeMode,
       themeColorValue: themeColorValue ?? this.themeColorValue,
       language: language ?? this.language,
@@ -194,6 +205,7 @@ class CsacPreferences {
       chatBubbleOpacity: chatBubbleOpacity ?? this.chatBubbleOpacity,
       chatBackgroundPath: chatBackgroundPath ?? this.chatBackgroundPath,
       serverUrl: serverUrl ?? this.serverUrl,
+      acopServerUrl: acopServerUrl ?? this.acopServerUrl,
       reduceMotion: reduceMotion ?? this.reduceMotion,
       showChatAvatars: showChatAvatars ?? this.showChatAvatars,
       enablePat: enablePat ?? this.enablePat,
@@ -220,6 +232,7 @@ class CsacPreferences {
   static Future<CsacPreferences> load() async {
     final prefs = await SharedPreferences.getInstance();
     return CsacPreferences(
+      clientMode: _clientModeFromName(prefs.getString(_clientModeKey)),
       themeMode: _themeModeFromName(prefs.getString(_themeKey)),
       themeColorValue: _themeColorFromPrefs(prefs),
       language: _languageFromName(prefs.getString(_languageKey)),
@@ -250,6 +263,9 @@ class CsacPreferences {
       chatBubbleOpacity: _chatBubbleOpacityFromPrefs(prefs),
       chatBackgroundPath: prefs.getString(_chatBackgroundPathKey) ?? '',
       serverUrl: _serverUrlFromPrefs(prefs.getString(_serverUrlKey)),
+      acopServerUrl: _acopServerUrlFromPrefs(
+        prefs.getString(_acopServerUrlKey),
+      ),
       reduceMotion: prefs.getBool(_reduceMotionKey) ?? false,
       showChatAvatars: prefs.getBool(_showChatAvatarsKey) ?? true,
       enablePat: prefs.getBool(_enablePatKey) ?? true,
@@ -277,6 +293,7 @@ class CsacPreferences {
 
   Future<void> save() async {
     final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_clientModeKey, clientMode.name);
     await prefs.setString(_themeKey, themeMode.name);
     await prefs.setInt(_themeColorKey, themeColorValue);
     await prefs.setString(_languageKey, language.name);
@@ -319,6 +336,11 @@ class CsacPreferences {
       await prefs.remove(_serverUrlKey);
     } else {
       await prefs.setString(_serverUrlKey, serverUrl.trim());
+    }
+    if (acopServerUrl.trim().isEmpty) {
+      await prefs.remove(_acopServerUrlKey);
+    } else {
+      await prefs.setString(_acopServerUrlKey, acopServerUrl.trim());
     }
     await prefs.setBool(_reduceMotionKey, reduceMotion);
     await prefs.setBool(_showChatAvatarsKey, showChatAvatars);
@@ -406,6 +428,24 @@ class CsacPreferences {
     return oldHosts.contains(normalized) ? '' : value;
   }
 
+  static String _acopServerUrlFromPrefs(String? raw) {
+    final value = (raw ?? '').trim();
+    if (value.isEmpty) {
+      return '';
+    }
+    final normalized = value.toLowerCase().replaceAll(RegExp(r'/+$'), '');
+    const oldHosts = <String>{
+      'http://127.0.0.1:8082',
+      'https://aocp.csac.chat',
+      'https://aocp.csac.chat/aocp',
+      'https://aocp.csac.chat/aocp/?route=',
+      'https://acop.csac.chat',
+      'https://acop.csac.chat/acop',
+      'https://acop.csac.chat/acop/?route=',
+    };
+    return oldHosts.contains(normalized) ? '' : value;
+  }
+
   static CsacLanguage _languageFromName(String? value) {
     for (final language in CsacLanguage.values) {
       if (language.name == value) {
@@ -481,6 +521,15 @@ class CsacPreferences {
       }
     }
     return MobileEnterKeyBehavior.send;
+  }
+
+  static AppClientMode _clientModeFromName(String? value) {
+    for (final mode in AppClientMode.values) {
+      if (mode.name == value) {
+        return mode;
+      }
+    }
+    return AppClientMode.csac;
   }
 }
 

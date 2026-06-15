@@ -4331,14 +4331,70 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
+class _SettingsSectionTitle extends StatelessWidget {
+  const _SettingsSectionTitle(this.title);
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
+      child: Text(
+        title,
+        style: Theme.of(
+          context,
+        ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+      ),
+    );
+  }
+}
+
+class _SettingsSubsectionTitle extends StatelessWidget {
+  const _SettingsSubsectionTitle(this.title);
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 6, 4, 8),
+      child: Text(
+        title,
+        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+          color: colors.onSurfaceVariant,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+class _SettingsGroupCard extends StatelessWidget {
+  const _SettingsGroupCard({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 0,
+      child: _RoundedInkClip(child: Column(children: children)),
+    );
+  }
+}
+
 class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController serverUrl;
+  late final TextEditingController acopServerUrl;
   late final TextEditingController settingsSearch;
   late final ScrollController settingsScroll;
   final developerOptionsKey = GlobalKey();
   bool clearing = false;
   bool refreshing = false;
   bool savingServer = false;
+  bool savingAcopServer = false;
   bool loadingPerformanceStats = false;
   bool clearingPerformanceCaches = false;
   bool enablingLowPerformanceMode = false;
@@ -4378,6 +4434,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.initState();
     settingsScroll = _desktopSmoothScrollController();
     serverUrl = TextEditingController(text: widget.state.preferences.serverUrl);
+    acopServerUrl = TextEditingController(
+      text: widget.state.preferences.acopServerUrl,
+    );
     settingsSearch = TextEditingController()..addListener(handleSearchChanged);
     widget.state.addListener(handleStateChanged);
     developerOptionsExpanded = widget.initialDeveloperOptionsExpanded;
@@ -4404,6 +4463,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     settingsSearch.removeListener(handleSearchChanged);
     settingsSearch.dispose();
     serverUrl.dispose();
+    acopServerUrl.dispose();
     settingsScroll.dispose();
     super.dispose();
   }
@@ -4445,6 +4505,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   String get languageLabel {
     return languageLabelFor(widget.state.preferences.language);
+  }
+
+  String get clientModeLabel {
+    final strings = context.strings;
+    switch (widget.state.preferences.clientMode) {
+      case AppClientMode.csac:
+        return strings.text('CsAC chat');
+      case AppClientMode.acop:
+        return strings.text('Developer platform');
+    }
   }
 
   String languageLabelFor(CsacLanguage language) {
@@ -5147,6 +5217,70 @@ class _SettingsScreenState extends State<SettingsScreen> {
     serverUrl.clear();
   }
 
+  Future<void> saveAcopServerUrl() async {
+    setState(() => savingAcopServer = true);
+    try {
+      final changed = await widget.state.updateAcopServerUrl(
+        acopServerUrl.text,
+      );
+      if (!mounted) {
+        return;
+      }
+      acopServerUrl.text = widget.state.preferences.acopServerUrl;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            context.strings.text(
+              changed
+                  ? 'ACOP server address saved. Please log in again.'
+                  : 'Server address is unchanged.',
+            ),
+          ),
+        ),
+      );
+      setState(() {});
+    } on FormatException {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(context.strings.text('Invalid server address.')),
+        ),
+      );
+    } catch (err) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            context.strings.format('Save failed: {error}', {'error': err}),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => savingAcopServer = false);
+      }
+    }
+  }
+
+  void resetAcopServerUrl() {
+    acopServerUrl.clear();
+  }
+
+  Future<void> chooseClientMode(AppClientMode mode) async {
+    if (widget.state.preferences.clientMode == mode) {
+      return;
+    }
+    await widget.state.switchClientMode(mode);
+    if (!mounted) {
+      return;
+    }
+    Navigator.of(context).popUntil((route) => route.isFirst);
+  }
+
   Future<void> chooseTheme() async {
     final selected = await showModalBottomSheet<ThemeMode>(
       context: context,
@@ -5757,6 +5891,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final user = widget.state.user;
     final strings = context.strings;
     final query = settingsSearch.text.trim().toLowerCase();
+    final hasSearchQuery = query.isNotEmpty;
+    final colors = Theme.of(context).colorScheme;
     final showAccount = settingMatches(query, [
       'Account settings',
       'Username',
@@ -5860,7 +5996,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ]);
     final showDeveloper = settingMatches(query, [
       'Developer options',
+      'Client mode',
+      'CsAC chat',
+      'Developer platform',
       'CsAC server address',
+      'ACOP server address',
       'HTTP protocol',
       'HTTP/1.1',
       'HTTP/2',
@@ -5912,25 +6052,76 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             const SizedBox(height: 12),
+            Card(
+              elevation: 0,
+              child: _RoundedInkClip(
+                child: ListTile(
+                  leading: _Avatar(
+                    url: widget.state.currentUserAvatar,
+                    fallback: Icons.person_rounded,
+                  ),
+                  title: Text(user?.nickname ?? strings.text('Not logged in')),
+                  subtitle: Text(
+                    [
+                      if (user?.username.isNotEmpty == true)
+                        '@${user!.username}',
+                      if (user != null) 'UID ${user.uid}',
+                    ].join(' | '),
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: user == null
+                      ? null
+                      : () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) =>
+                                  AccountSettingsScreen(state: widget.state),
+                            ),
+                          );
+                        },
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                FilterChip(
+                  selected: hasSearchQuery && showAppearance,
+                  onSelected: (_) => settingsSearch.text = 'Theme',
+                  label: Text(strings.text('Appearance')),
+                ),
+                FilterChip(
+                  selected: hasSearchQuery && showData,
+                  onSelected: (_) => settingsSearch.text = 'Refresh app data',
+                  label: Text(strings.text('Data')),
+                ),
+                FilterChip(
+                  selected: hasSearchQuery && showDeveloper,
+                  onSelected: (_) => settingsSearch.text = 'Developer options',
+                  label: Text(strings.text('Developer')),
+                ),
+                FilterChip(
+                  selected: hasSearchQuery && showInfo,
+                  onSelected: (_) => settingsSearch.text = 'App information',
+                  label: Text(strings.text('About')),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
             if (showAccount) ...[
+              _SettingsSectionTitle(strings.text('Account')),
               Card(
-                key: developerOptionsKey,
                 elevation: 0,
                 child: _RoundedInkClip(
                   child: ListTile(
-                    leading: _Avatar(
-                      url: widget.state.currentUserAvatar,
-                      fallback: Icons.person_rounded,
-                    ),
-                    title: Text(
-                      user?.nickname ?? strings.text('Not logged in'),
-                    ),
+                    leading: const Icon(Icons.person_outline),
+                    title: Text(strings.text('Account settings')),
                     subtitle: Text(
-                      [
-                        if (user?.username.isNotEmpty == true)
-                          '@${user!.username}',
-                        if (user != null) 'UID ${user.uid}',
-                      ].join(' | '),
+                      user == null
+                          ? strings.text('Not logged in')
+                          : '${user.nickname} · UID ${user.uid}',
                     ),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: user == null
@@ -5949,6 +6140,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const SizedBox(height: 12),
             ],
             if (showInfo) ...[
+              _SettingsSectionTitle(strings.text('About')),
               Card(
                 elevation: 0,
                 child: _RoundedInkClip(
@@ -6027,6 +6219,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const SizedBox(height: 12),
             ],
             if (showFeedback) ...[
+              _SettingsSectionTitle(strings.text('Feedback')),
               Card(
                 elevation: 0,
                 child: _RoundedInkClip(
@@ -6050,312 +6243,312 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const SizedBox(height: 12),
             ],
             if (showAppearance) ...[
-              Card(
-                elevation: 0,
-                child: _RoundedInkClip(
-                  child: Column(
-                    children: [
-                      ListTile(
-                        leading: const Icon(Icons.dark_mode_outlined),
-                        title: Text(strings.text('Theme')),
-                        subtitle: Text(themeLabel),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: chooseTheme,
-                      ),
-                      const Divider(height: 1),
-                      ListTile(
-                        leading: const Icon(Icons.palette_outlined),
-                        title: Text(strings.text('Theme color')),
-                        subtitle: Text(themeColorLabel),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _ThemeColorDot(
-                              color: Color(
-                                widget.state.preferences.themeColorValue,
+              _SettingsSectionTitle(strings.text('Appearance')),
+              _SettingsSubsectionTitle(strings.text('Theme')),
+              _SettingsGroupCard(
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.dark_mode_outlined),
+                    title: Text(strings.text('Theme')),
+                    subtitle: Text(themeLabel),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: chooseTheme,
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.palette_outlined),
+                    title: Text(strings.text('Theme color')),
+                    subtitle: Text(themeColorLabel),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _ThemeColorDot(
+                          color: Color(
+                            widget.state.preferences.themeColorValue,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        const Icon(Icons.chevron_right),
+                      ],
+                    ),
+                    onTap: chooseThemeColor,
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.translate),
+                    title: Text(strings.text('Language')),
+                    subtitle: languageSubtitle(),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: chooseLanguage,
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.text_fields),
+                    title: Text(strings.text('Font style')),
+                    subtitle: Text(fontStyleLabel),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: chooseFontStyle,
+                  ),
+                  const Divider(height: 1),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.format_size),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(strings.text('Font size')),
+                              Text(
+                                interfaceFontSizeLabel,
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
+                                    ),
                               ),
-                            ),
-                            const SizedBox(width: 12),
-                            const Icon(Icons.chevron_right),
-                          ],
-                        ),
-                        onTap: chooseThemeColor,
-                      ),
-                      const Divider(height: 1),
-                      ListTile(
-                        leading: const Icon(Icons.translate),
-                        title: Text(strings.text('Language')),
-                        subtitle: languageSubtitle(),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: chooseLanguage,
-                      ),
-                      const Divider(height: 1),
-                      ListTile(
-                        leading: const Icon(Icons.text_fields),
-                        title: Text(strings.text('Font style')),
-                        subtitle: Text(fontStyleLabel),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: chooseFontStyle,
-                      ),
-                      const Divider(height: 1),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.format_size),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(strings.text('Font size')),
-                                  Text(
-                                    interfaceFontSizeLabel,
-                                    style: Theme.of(context).textTheme.bodySmall
-                                        ?.copyWith(
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.onSurfaceVariant,
-                                        ),
-                                  ),
-                                  Slider(
-                                    value: widget
-                                        .state
-                                        .preferences
-                                        .interfaceFontScale,
-                                    min: minInterfaceFontScale,
-                                    max: maxInterfaceFontScale,
-                                    divisions: 9,
-                                    label: interfaceFontSizeLabel,
-                                    onChanged: updateInterfaceFontScale,
-                                  ),
-                                ],
+                              Slider(
+                                value:
+                                    widget.state.preferences.interfaceFontScale,
+                                min: minInterfaceFontScale,
+                                max: maxInterfaceFontScale,
+                                divisions: 9,
+                                label: interfaceFontSizeLabel,
+                                onChanged: updateInterfaceFontScale,
                               ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const Divider(height: 1),
-                      SwitchListTile(
-                        secondary: const Icon(Icons.format_line_spacing),
-                        title: Text(strings.text('Compact mode')),
-                        subtitle: Text(
-                          strings.text('Reduce spacing in lists and controls'),
-                        ),
-                        value: widget.state.preferences.compactMode,
-                        onChanged: widget.state.updateCompactMode,
-                      ),
-                      const Divider(height: 1),
-                      SwitchListTile(
-                        secondary: const Icon(Icons.contrast),
-                        title: Text(strings.text('High contrast mode')),
-                        subtitle: Text(
-                          strings.text(
-                            'Use stronger contrast colors and outlines',
+                            ],
                           ),
-                        ),
-                        value: widget.state.preferences.highContrastMode,
-                        onChanged: widget.state.updateHighContrastMode,
-                      ),
-                      const Divider(height: 1),
-                      ListTile(
-                        leading: const Icon(Icons.sort),
-                        title: Text(strings.text('Conversation sorting')),
-                        subtitle: Text(conversationSortLabel),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: chooseConversationSortMode,
-                      ),
-                      const Divider(height: 1),
-                      ListTile(
-                        leading: const Icon(Icons.subject_outlined),
-                        title: Text(strings.text('Conversation subtitle')),
-                        subtitle: Text(conversationSubtitleModeLabel),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: chooseConversationSubtitleMode,
-                      ),
-                      const Divider(height: 1),
-                      ListTile(
-                        leading: const Icon(Icons.schedule_outlined),
-                        title: Text(strings.text('Message time format')),
-                        subtitle: Text(messageTimeFormatLabel),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: chooseMessageTimeFormat,
-                      ),
-                      const Divider(height: 1),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-                        child: _ChatBubbleThemePreview(
-                          preferences: widget.state.preferences,
-                        ),
-                      ),
-                      const Divider(height: 1),
-                      ListTile(
-                        leading: const Icon(Icons.chat_bubble_outline),
-                        title: Text(strings.text('Own bubble color')),
-                        subtitle: Text(
-                          chatBubbleColorLabel(
-                            widget.state.preferences.ownChatBubbleColorValue,
-                          ),
-                        ),
-                        trailing: _ChatBubbleColorTrailing(
-                          colorValue:
-                              widget.state.preferences.ownChatBubbleColorValue,
-                          fallback: Theme.of(
-                            context,
-                          ).colorScheme.primaryContainer,
-                        ),
-                        onTap: () => chooseChatBubbleColor(mine: true),
-                      ),
-                      const Divider(height: 1),
-                      ListTile(
-                        leading: const Icon(Icons.chat_bubble_outline),
-                        title: Text(strings.text('Other bubble color')),
-                        subtitle: Text(
-                          chatBubbleColorLabel(
-                            widget.state.preferences.otherChatBubbleColorValue,
-                          ),
-                        ),
-                        trailing: _ChatBubbleColorTrailing(
-                          colorValue: widget
-                              .state
-                              .preferences
-                              .otherChatBubbleColorValue,
-                          fallback: Theme.of(
-                            context,
-                          ).colorScheme.surfaceContainerHighest,
-                        ),
-                        onTap: () => chooseChatBubbleColor(mine: false),
-                      ),
-                      const Divider(height: 1),
-                      ListTile(
-                        leading: const Icon(Icons.rounded_corner),
-                        title: Text(strings.text('Bubble corner style')),
-                        subtitle: Text(chatBubbleCornerStyleLabel),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: chooseChatBubbleCornerStyle,
-                      ),
-                      const Divider(height: 1),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.opacity),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(strings.text('Bubble opacity')),
-                                  Text(
-                                    chatBubbleOpacityLabel,
-                                    style: Theme.of(context).textTheme.bodySmall
-                                        ?.copyWith(
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.onSurfaceVariant,
-                                        ),
-                                  ),
-                                  Slider(
-                                    value: widget
-                                        .state
-                                        .preferences
-                                        .chatBubbleOpacity,
-                                    min: 0.45,
-                                    max: 1,
-                                    divisions: 11,
-                                    label: chatBubbleOpacityLabel,
-                                    onChanged: updateChatBubbleOpacity,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const Divider(height: 1),
-                      ListTile(
-                        leading: const Icon(Icons.wallpaper_outlined),
-                        title: Text(strings.text('Chat background')),
-                        subtitle: Text(chatBackgroundLabel),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: chooseChatBackground,
-                      ),
-                      const Divider(height: 1),
-                      SwitchListTile(
-                        secondary: const Icon(Icons.account_circle_outlined),
-                        title: Text(strings.text('Show chat avatars')),
-                        subtitle: Text(
-                          strings.text(
-                            'Display sender avatars beside message bubbles',
-                          ),
-                        ),
-                        value: widget.state.preferences.showChatAvatars,
-                        onChanged: widget.state.updateShowChatAvatars,
-                      ),
-                      const Divider(height: 1),
-                      SwitchListTile(
-                        secondary: const Icon(Icons.waving_hand_outlined),
-                        title: Text(strings.text('Double tap avatar pat')),
-                        subtitle: Text(
-                          strings.text(
-                            'Double tap a group member avatar to send a pat',
-                          ),
-                        ),
-                        value: widget.state.preferences.enablePat,
-                        onChanged: widget.state.updateEnablePat,
-                      ),
-                      const Divider(height: 1),
-                      SwitchListTile(
-                        secondary: const Icon(Icons.bolt_outlined),
-                        title: Text(strings.text('Quick input triggers')),
-                        subtitle: Text(
-                          strings.text(
-                            'Automatically open pickers after typing @ or #',
-                          ),
-                        ),
-                        value:
-                            widget.state.preferences.enableQuickInputTriggers,
-                        onChanged: widget.state.updateEnableQuickInputTriggers,
-                      ),
-                      if (isMobilePlatform) ...[
-                        const Divider(height: 1),
-                        ListTile(
-                          leading: const Icon(Icons.keyboard_return_outlined),
-                          title: Text(
-                            strings.text('Keyboard confirmation key'),
-                          ),
-                          subtitle: Text(mobileEnterKeyBehaviorLabel),
-                          trailing: const Icon(Icons.chevron_right),
-                          onTap: chooseMobileEnterKeyBehavior,
                         ),
                       ],
-                      const Divider(height: 1),
-                      ListTile(
-                        leading: const Icon(Icons.badge_outlined),
-                        title: Text(strings.text('Group badge content')),
-                        subtitle: Text(groupMemberBadgeModeLabel),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: chooseGroupMemberBadgeMode,
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  SwitchListTile(
+                    secondary: const Icon(Icons.format_line_spacing),
+                    title: Text(strings.text('Compact mode')),
+                    subtitle: Text(
+                      strings.text('Reduce spacing in lists and controls'),
+                    ),
+                    value: widget.state.preferences.compactMode,
+                    onChanged: widget.state.updateCompactMode,
+                  ),
+                  const Divider(height: 1),
+                  SwitchListTile(
+                    secondary: const Icon(Icons.contrast),
+                    title: Text(strings.text('High contrast mode')),
+                    subtitle: Text(
+                      strings.text('Use stronger contrast colors and outlines'),
+                    ),
+                    value: widget.state.preferences.highContrastMode,
+                    onChanged: widget.state.updateHighContrastMode,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              _SettingsSubsectionTitle(strings.text('Chats')),
+              _SettingsGroupCard(
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.sort),
+                    title: Text(strings.text('Conversation sorting')),
+                    subtitle: Text(conversationSortLabel),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: chooseConversationSortMode,
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.subject_outlined),
+                    title: Text(strings.text('Conversation subtitle')),
+                    subtitle: Text(conversationSubtitleModeLabel),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: chooseConversationSubtitleMode,
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.schedule_outlined),
+                    title: Text(strings.text('Message time format')),
+                    subtitle: Text(messageTimeFormatLabel),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: chooseMessageTimeFormat,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              _SettingsSubsectionTitle(strings.text('Chat bubble theme')),
+              _SettingsGroupCard(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+                    child: _ChatBubbleThemePreview(
+                      preferences: widget.state.preferences,
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.chat_bubble_outline),
+                    title: Text(strings.text('Own bubble color')),
+                    subtitle: Text(
+                      chatBubbleColorLabel(
+                        widget.state.preferences.ownChatBubbleColorValue,
                       ),
-                      const Divider(height: 1),
-                      SwitchListTile(
-                        secondary: const Icon(Icons.motion_photos_off_outlined),
-                        title: Text(strings.text('Reduce motion')),
-                        subtitle: Text(
-                          strings.text(
-                            'Use simpler transitions and fewer decorative animations',
+                    ),
+                    trailing: _ChatBubbleColorTrailing(
+                      colorValue:
+                          widget.state.preferences.ownChatBubbleColorValue,
+                      fallback: Theme.of(context).colorScheme.primaryContainer,
+                    ),
+                    onTap: () => chooseChatBubbleColor(mine: true),
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.chat_bubble_outline),
+                    title: Text(strings.text('Other bubble color')),
+                    subtitle: Text(
+                      chatBubbleColorLabel(
+                        widget.state.preferences.otherChatBubbleColorValue,
+                      ),
+                    ),
+                    trailing: _ChatBubbleColorTrailing(
+                      colorValue:
+                          widget.state.preferences.otherChatBubbleColorValue,
+                      fallback: Theme.of(
+                        context,
+                      ).colorScheme.surfaceContainerHighest,
+                    ),
+                    onTap: () => chooseChatBubbleColor(mine: false),
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.rounded_corner),
+                    title: Text(strings.text('Bubble corner style')),
+                    subtitle: Text(chatBubbleCornerStyleLabel),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: chooseChatBubbleCornerStyle,
+                  ),
+                  const Divider(height: 1),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.opacity),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(strings.text('Bubble opacity')),
+                              Text(
+                                chatBubbleOpacityLabel,
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
+                                    ),
+                              ),
+                              Slider(
+                                value:
+                                    widget.state.preferences.chatBubbleOpacity,
+                                min: 0.45,
+                                max: 1,
+                                divisions: 11,
+                                label: chatBubbleOpacityLabel,
+                                onChanged: updateChatBubbleOpacity,
+                              ),
+                            ],
                           ),
                         ),
-                        value: widget.state.preferences.reduceMotion,
-                        onChanged: widget.state.updateReduceMotion,
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.wallpaper_outlined),
+                    title: Text(strings.text('Chat background')),
+                    subtitle: Text(chatBackgroundLabel),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: chooseChatBackground,
+                  ),
+                  const Divider(height: 1),
+                  SwitchListTile(
+                    secondary: const Icon(Icons.account_circle_outlined),
+                    title: Text(strings.text('Show chat avatars')),
+                    subtitle: Text(
+                      strings.text(
+                        'Display sender avatars beside message bubbles',
+                      ),
+                    ),
+                    value: widget.state.preferences.showChatAvatars,
+                    onChanged: widget.state.updateShowChatAvatars,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              _SettingsSubsectionTitle(strings.text('Input and interaction')),
+              _SettingsGroupCard(
+                children: [
+                  SwitchListTile(
+                    secondary: const Icon(Icons.waving_hand_outlined),
+                    title: Text(strings.text('Double tap avatar pat')),
+                    subtitle: Text(
+                      strings.text(
+                        'Double tap a group member avatar to send a pat',
+                      ),
+                    ),
+                    value: widget.state.preferences.enablePat,
+                    onChanged: widget.state.updateEnablePat,
+                  ),
+                  const Divider(height: 1),
+                  SwitchListTile(
+                    secondary: const Icon(Icons.bolt_outlined),
+                    title: Text(strings.text('Quick input triggers')),
+                    subtitle: Text(
+                      strings.text(
+                        'Automatically open pickers after typing @ or #',
+                      ),
+                    ),
+                    value: widget.state.preferences.enableQuickInputTriggers,
+                    onChanged: widget.state.updateEnableQuickInputTriggers,
+                  ),
+                  if (isMobilePlatform) ...[
+                    const Divider(height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.keyboard_return_outlined),
+                      title: Text(strings.text('Keyboard confirmation key')),
+                      subtitle: Text(mobileEnterKeyBehaviorLabel),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: chooseMobileEnterKeyBehavior,
+                    ),
+                  ],
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.badge_outlined),
+                    title: Text(strings.text('Group badge content')),
+                    subtitle: Text(groupMemberBadgeModeLabel),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: chooseGroupMemberBadgeMode,
+                  ),
+                  const Divider(height: 1),
+                  SwitchListTile(
+                    secondary: const Icon(Icons.motion_photos_off_outlined),
+                    title: Text(strings.text('Reduce motion')),
+                    subtitle: Text(
+                      strings.text(
+                        'Use simpler transitions and fewer decorative animations',
+                      ),
+                    ),
+                    value: widget.state.preferences.reduceMotion,
+                    onChanged: widget.state.updateReduceMotion,
+                  ),
+                ],
               ),
               const SizedBox(height: 12),
             ],
             if (showLock) ...[
+              _SettingsSectionTitle(strings.text('Security')),
               Card(
                 elevation: 0,
                 child: _RoundedInkClip(
@@ -6375,243 +6568,232 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const SizedBox(height: 12),
             ],
             if (showData) ...[
-              Card(
-                elevation: 0,
-                child: _RoundedInkClip(
-                  child: Column(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 14, 12, 10),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.speed_outlined,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    strings.text('Performance and cache'),
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.titleMedium,
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    performanceStats == null
-                                        ? strings.text(
-                                            'Measure local storage and memory cache',
-                                          )
-                                        : strings
-                                              .format('Total cache: {size}', {
-                                                'size': formatCacheBytes(
-                                                  performanceStats!.totalBytes,
-                                                ),
-                                              }),
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall,
-                                  ),
-                                ],
-                              ),
-                            ),
-                            IconButton(
-                              tooltip: strings.text('Refresh'),
-                              onPressed: loadingPerformanceStats
-                                  ? null
-                                  : () => loadPerformanceStats(showError: true),
-                              icon: loadingPerformanceStats
-                                  ? const SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Icon(Icons.refresh),
-                            ),
-                          ],
+              _SettingsSectionTitle(strings.text('Data')),
+              _SettingsSubsectionTitle(strings.text('Performance and cache')),
+              _SettingsGroupCard(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 12, 10),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.speed_outlined,
+                          color: Theme.of(context).colorScheme.primary,
                         ),
-                      ),
-                      if (performanceStats == null)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                          child: LinearProgressIndicator(
-                            minHeight: 2,
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                        )
-                      else
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                          child: Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              for (final metric in performanceMetrics(
-                                performanceStats!,
-                              ))
-                                _CacheMetricTile(metric: metric),
+                              Text(
+                                strings.text('Performance and cache'),
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                performanceStats == null
+                                    ? strings.text(
+                                        'Measure local storage and memory cache',
+                                      )
+                                    : strings.format('Total cache: {size}', {
+                                        'size': formatCacheBytes(
+                                          performanceStats!.totalBytes,
+                                        ),
+                                      }),
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
                             ],
                           ),
                         ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            OutlinedButton.icon(
-                              onPressed: enablingLowPerformanceMode
-                                  ? null
-                                  : enableLowPerformanceMode,
-                              icon: enablingLowPerformanceMode
-                                  ? const SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Icon(Icons.battery_saver_outlined),
-                              label: Text(strings.text('Low performance mode')),
-                            ),
-                            const SizedBox(height: 8),
-                            FilledButton.icon(
-                              onPressed: clearingPerformanceCaches
-                                  ? null
-                                  : clearPerformanceCaches,
-                              icon: clearingPerformanceCaches
-                                  ? const SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Icon(Icons.auto_delete_outlined),
-                              label: Text(
-                                strings.text('Clear performance caches'),
-                              ),
-                            ),
-                          ],
+                        IconButton(
+                          tooltip: strings.text('Refresh'),
+                          onPressed: loadingPerformanceStats
+                              ? null
+                              : () => loadPerformanceStats(showError: true),
+                          icon: loadingPerformanceStats
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.refresh),
                         ),
-                      ),
-                      const Divider(height: 1),
-                      ListTile(
-                        leading: const Icon(Icons.sync),
-                        title: Text(strings.text('Refresh app data')),
-                        subtitle: Text(
-                          strings.text('Reload conversations and counters'),
-                        ),
-                        trailing: refreshing
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.chevron_right),
-                        onTap: refreshing ? null : refreshAll,
-                      ),
-                      const Divider(height: 1),
-                      SwitchListTile(
-                        secondary: const Icon(
-                          Icons.notifications_active_outlined,
-                        ),
-                        title: Text(strings.text('System notifications')),
-                        subtitle: Text(
-                          strings.text(
-                            'Show local system alerts for new messages',
-                          ),
-                        ),
-                        value: widget
-                            .state
-                            .preferences
-                            .localSystemNotificationsEnabled,
-                        onChanged: widget.state.updateLocalSystemNotifications,
-                      ),
-                      const Divider(height: 1),
-                      ListTile(
-                        leading: const Icon(Icons.network_check_outlined),
-                        title: Text(strings.text('Connection diagnostics')),
-                        subtitle: Text(
-                          strings.text(
-                            'Test server latency, API, login and image domain',
-                          ),
-                        ),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) =>
-                                  NetworkDiagnosticsScreen(state: widget.state),
-                            ),
-                          );
-                        },
-                      ),
-                      const Divider(height: 1),
-                      ListTile(
-                        leading: const Icon(Icons.http_outlined),
-                        title: Text(strings.text('HTTP protocol')),
-                        subtitle: Text(
-                          strings.text('Last API request protocol'),
-                        ),
-                        trailing: Text(
-                          localizedApiHttpProtocolLabel(
-                            context,
-                            widget.state.activeHttpProtocol,
-                          ),
-                        ),
-                      ),
-                      const Divider(height: 1),
-                      ListTile(
-                        leading: const Icon(Icons.article_outlined),
-                        title: Text(strings.text('App logs')),
-                        subtitle: Text(
-                          strings.text('View local diagnostic logs'),
-                        ),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) =>
-                                  AppLogsScreen(state: widget.state),
-                            ),
-                          );
-                        },
-                      ),
-                      const Divider(height: 1),
-                      ListTile(
-                        leading: const Icon(Icons.cleaning_services_outlined),
-                        title: Text(strings.text('Clear local cache')),
-                        subtitle: Text(
-                          strings.text(
-                            'Remove cached conversations and message history',
-                          ),
-                        ),
-                        trailing: clearing
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.chevron_right),
-                        onTap: clearing ? null : clearCache,
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
+                  if (performanceStats == null)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                      child: LinearProgressIndicator(
+                        minHeight: 2,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    )
+                  else
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          for (final metric in performanceMetrics(
+                            performanceStats!,
+                          ))
+                            _CacheMetricTile(metric: metric),
+                        ],
+                      ),
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: enablingLowPerformanceMode
+                              ? null
+                              : enableLowPerformanceMode,
+                          icon: enablingLowPerformanceMode
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.battery_saver_outlined),
+                          label: Text(strings.text('Low performance mode')),
+                        ),
+                        const SizedBox(height: 8),
+                        FilledButton.icon(
+                          onPressed: clearingPerformanceCaches
+                              ? null
+                              : clearPerformanceCaches,
+                          icon: clearingPerformanceCaches
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.auto_delete_outlined),
+                          label: Text(strings.text('Clear performance caches')),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              _SettingsSubsectionTitle(strings.text('Refresh app data')),
+              _SettingsGroupCard(
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.sync),
+                    title: Text(strings.text('Refresh app data')),
+                    subtitle: Text(
+                      strings.text('Reload conversations and counters'),
+                    ),
+                    trailing: refreshing
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.chevron_right),
+                    onTap: refreshing ? null : refreshAll,
+                  ),
+                  const Divider(height: 1),
+                  SwitchListTile(
+                    secondary: const Icon(Icons.notifications_active_outlined),
+                    title: Text(strings.text('System notifications')),
+                    subtitle: Text(
+                      strings.text('Show local system alerts for new messages'),
+                    ),
+                    value: widget
+                        .state
+                        .preferences
+                        .localSystemNotificationsEnabled,
+                    onChanged: widget.state.updateLocalSystemNotifications,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              _SettingsSubsectionTitle(strings.text('Connection diagnostics')),
+              _SettingsGroupCard(
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.network_check_outlined),
+                    title: Text(strings.text('Connection diagnostics')),
+                    subtitle: Text(
+                      strings.text(
+                        'Test server latency, API, login and image domain',
+                      ),
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) =>
+                              NetworkDiagnosticsScreen(state: widget.state),
+                        ),
+                      );
+                    },
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.http_outlined),
+                    title: Text(strings.text('HTTP protocol')),
+                    subtitle: Text(strings.text('Last API request protocol')),
+                    trailing: Text(
+                      localizedApiHttpProtocolLabel(
+                        context,
+                        widget.state.activeHttpProtocol,
+                      ),
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.article_outlined),
+                    title: Text(strings.text('App logs')),
+                    subtitle: Text(strings.text('View local diagnostic logs')),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => AppLogsScreen(state: widget.state),
+                        ),
+                      );
+                    },
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.cleaning_services_outlined),
+                    title: Text(strings.text('Clear local cache')),
+                    subtitle: Text(
+                      strings.text(
+                        'Remove cached conversations and message history',
+                      ),
+                    ),
+                    trailing: clearing
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.chevron_right),
+                    onTap: clearing ? null : clearCache,
+                  ),
+                ],
               ),
               const SizedBox(height: 12),
             ],
             if (showDeveloper) ...[
+              _SettingsSectionTitle(strings.text('Developer')),
               Card(
+                key: developerOptionsKey,
                 elevation: 0,
                 child: _RoundedInkClip(
                   child: ExpansionTile(
@@ -6622,15 +6804,53 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     leading: const Icon(Icons.developer_mode_outlined),
                     title: Text(strings.text('Developer options')),
                     subtitle: Text(
-                      strings.format('Current server: {server}', {
-                        'server':
-                            widget.state.preferences.serverUrl.trim().isEmpty
-                            ? strings.text('Default server')
-                            : widget.state.preferences.serverUrl.trim(),
-                      }),
+                      [
+                        clientModeLabel,
+                        strings.format('Current server: {server}', {
+                          'server':
+                              widget.state.preferences.serverUrl.trim().isEmpty
+                              ? strings.text('Default server')
+                              : widget.state.preferences.serverUrl.trim(),
+                        }),
+                      ].join(' · '),
                     ),
                     childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                     children: [
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          strings.text('Client mode'),
+                          style: Theme.of(context).textTheme.labelLarge
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: SegmentedButton<AppClientMode>(
+                          segments: [
+                            ButtonSegment(
+                              value: AppClientMode.csac,
+                              icon: const Icon(Icons.forum_outlined),
+                              label: Text(strings.text('CsAC chat')),
+                            ),
+                            ButtonSegment(
+                              value: AppClientMode.acop,
+                              icon: const Icon(
+                                Icons.integration_instructions_outlined,
+                              ),
+                              label: Text(strings.text('Developer platform')),
+                            ),
+                          ],
+                          selected: {widget.state.preferences.clientMode},
+                          onSelectionChanged: widget.state.loading
+                              ? null
+                              : (selection) => unawaited(
+                                  chooseClientMode(selection.first),
+                                ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
                       TextField(
                         controller: serverUrl,
                         keyboardType: TextInputType.url,
@@ -6672,6 +6892,55 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   )
                                 : const Icon(Icons.save_outlined),
                             label: Text(strings.text('Apply server')),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: acopServerUrl,
+                        keyboardType: TextInputType.url,
+                        textInputAction: TextInputAction.done,
+                        onSubmitted: (_) {
+                          if (!savingAcopServer) {
+                            saveAcopServerUrl();
+                          }
+                        },
+                        decoration: InputDecoration(
+                          labelText: strings.text('ACOP server address'),
+                          hintText: '192.168.1.10:8082',
+                          helperText: strings.text(
+                            'Leave empty to use the default server.',
+                          ),
+                          border: const OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      OverflowBar(
+                        alignment: MainAxisAlignment.end,
+                        spacing: 12,
+                        overflowSpacing: 8,
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: savingAcopServer
+                                ? null
+                                : resetAcopServerUrl,
+                            icon: const Icon(Icons.restart_alt),
+                            label: Text(strings.text('Reset ACOP server')),
+                          ),
+                          FilledButton.icon(
+                            onPressed: savingAcopServer
+                                ? null
+                                : saveAcopServerUrl,
+                            icon: savingAcopServer
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.save_outlined),
+                            label: Text(strings.text('Apply ACOP server')),
                           ),
                         ],
                       ),
@@ -6721,6 +6990,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const SizedBox(height: 12),
             ],
             if (showLogout) ...[
+              _SettingsSectionTitle(strings.text('Account')),
               Card(
                 elevation: 0,
                 child: _RoundedInkClip(
@@ -6730,6 +7000,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     subtitle: Text(
                       strings.text('Clear session and return to login'),
                     ),
+                    iconColor: colors.error,
                     onTap: logoutToLogin,
                   ),
                 ),

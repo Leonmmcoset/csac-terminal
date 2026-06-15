@@ -3498,6 +3498,17 @@ class _MessageBubbleState extends State<_MessageBubble> {
                   ),
                 ),
               ),
+              if (widget.member?.isBot == true) ...[
+                const SizedBox(width: 4),
+                Tooltip(
+                  message: strings.text('Bot'),
+                  child: Icon(
+                    Icons.smart_toy_outlined,
+                    size: 14,
+                    color: colors.primary,
+                  ),
+                ),
+              ],
               if (messageTime.isNotEmpty) ...[
                 const SizedBox(width: 6),
                 Flexible(
