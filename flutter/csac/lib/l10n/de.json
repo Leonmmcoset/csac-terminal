@@ -185,8 +185,6 @@
   "Recent": "Recent",
   "Used {count} times": "Used {count} times",
   "System": "System",
-  "Light": "Light",
-  "Dark": "Dark",
   "English": "English",
   "中文": "中文",
   "Refreshed.": "Refreshed.",
@@ -272,7 +270,6 @@
   "Display owner/admin/member role": "Display owner/admin/member role",
   "Reduce motion": "Reduce motion",
   "Use simpler transitions and fewer decorative animations": "Use simpler transitions and fewer decorative animations",
-  "Avatar": "Avatar",
   "Profile": "Profile",
   "Pat": "Pat",
   "Level": "Level",
@@ -470,7 +467,6 @@
   "User not found.": "User not found.",
   "Nickname": "Nickname",
   "Group role": "Group role",
-  "Open private chat": "Open private chat",
   "Cannot add friend": "Cannot add friend",
   "Recover friend": "Recover friend",
   "Friend recovered.": "Friend recovered.",
@@ -896,7 +892,6 @@
   "Nothing to preview.": "",
   "code": "",
   "Email and password are required.": "",
-  "Code": "",
   "Restore deleted account": "",
   "Restore email sent. Check your inbox for the restore code.": "",
   "Please enter the restore code.": "",
@@ -918,8 +913,7 @@
   "About": "",
   "Appearance": "",
   "Data": "",
-  "Developer": ""
-,
+  "Developer": "",
   "Delete bot?": "",
   "CsAC Open Platform": "",
   "Banned": "",
@@ -997,7 +991,6 @@
   "Independent developer platform mode": "",
   "CsAC username": "",
   "Event type": "",
-  "Reset bot token?": ""
-,
+  "Reset bot token?": "",
   "Bot": ""
 }

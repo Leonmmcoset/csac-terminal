@@ -185,8 +185,6 @@
   "Recent": "最近",
   "Used {count} times": "使用 {count} 次",
   "System": "跟随系统",
-  "Light": "浅色",
-  "Dark": "深色",
   "English": "English",
   "中文": "中文",
   "Refreshed.": "已刷新。",
@@ -272,7 +270,6 @@
   "Display owner/admin/member role": "显示群主、管理员或成员身份",
   "Reduce motion": "减少动画",
   "Use simpler transitions and fewer decorative animations": "使用更简单的过渡，并减少装饰性动画。",
-  "Avatar": "头像",
   "Profile": "资料",
   "Pat": "拍一拍",
   "Level": "等级",
@@ -470,7 +467,6 @@
   "User not found.": "未找到用户。",
   "Nickname": "昵称",
   "Group role": "群内身份",
-  "Open private chat": "打开私聊",
   "Cannot add friend": "无法添加好友",
   "Recover friend": "恢复好友",
   "Friend recovered.": "好友已恢复。",
@@ -896,7 +892,6 @@
   "Nothing to preview.": "暂无可预览内容。",
   "code": "代码",
   "Email and password are required.": "请输入邮箱和密码。",
-  "Code": "验证码",
   "Restore deleted account": "找回已注销账号",
   "Restore email sent. Check your inbox for the restore code.": "找回邮件已发送，请在邮箱中查看找回验证码。",
   "Please enter the restore code.": "请输入找回验证码。",
@@ -918,8 +913,7 @@
   "About": "关于",
   "Appearance": "外观",
   "Data": "数据",
-  "Developer": "开发者"
-,
+  "Developer": "开发者",
   "Delete bot?": "删除机器人？",
   "CsAC Open Platform": "CsAC 开放平台",
   "Banned": "已封禁",
@@ -997,7 +991,6 @@
   "Independent developer platform mode": "独立的开发者平台模式",
   "CsAC username": "CsAC 用户名",
   "Event type": "事件类型",
-  "Reset bot token?": "重置机器人 Token？"
-,
+  "Reset bot token?": "重置机器人 Token？",
   "Bot": "机器人"
 }
