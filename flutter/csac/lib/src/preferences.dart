@@ -53,6 +53,7 @@ class CsacPreferences {
     this.chatBackgroundPath = '',
     this.serverUrl = '',
     this.acopServerUrl = '',
+    this.showAcopBlockGeneratedCodeOnMobile = false,
     this.reduceMotion = false,
     this.showChatAvatars = true,
     this.enablePat = true,
@@ -87,6 +88,8 @@ class CsacPreferences {
   static const _chatBackgroundPathKey = 'csac.chat_background_path';
   static const _serverUrlKey = 'csac.server_url';
   static const _acopServerUrlKey = 'csac.acop_server_url';
+  static const _showAcopBlockGeneratedCodeOnMobileKey =
+      'csac.acop.block_editor.show_generated_code_mobile';
   static const _reduceMotionKey = 'csac.reduce_motion';
   static const _showChatAvatarsKey = 'csac.chat.show_avatars';
   static const _enablePatKey = 'csac.chat.enable_pat';
@@ -122,6 +125,7 @@ class CsacPreferences {
   final String chatBackgroundPath;
   final String serverUrl;
   final String acopServerUrl;
+  final bool showAcopBlockGeneratedCodeOnMobile;
   final bool reduceMotion;
   final bool showChatAvatars;
   final bool enablePat;
@@ -168,6 +172,7 @@ class CsacPreferences {
     String? chatBackgroundPath,
     String? serverUrl,
     String? acopServerUrl,
+    bool? showAcopBlockGeneratedCodeOnMobile,
     bool? reduceMotion,
     bool? showChatAvatars,
     bool? enablePat,
@@ -206,6 +211,9 @@ class CsacPreferences {
       chatBackgroundPath: chatBackgroundPath ?? this.chatBackgroundPath,
       serverUrl: serverUrl ?? this.serverUrl,
       acopServerUrl: acopServerUrl ?? this.acopServerUrl,
+      showAcopBlockGeneratedCodeOnMobile:
+          showAcopBlockGeneratedCodeOnMobile ??
+          this.showAcopBlockGeneratedCodeOnMobile,
       reduceMotion: reduceMotion ?? this.reduceMotion,
       showChatAvatars: showChatAvatars ?? this.showChatAvatars,
       enablePat: enablePat ?? this.enablePat,
@@ -266,6 +274,8 @@ class CsacPreferences {
       acopServerUrl: _acopServerUrlFromPrefs(
         prefs.getString(_acopServerUrlKey),
       ),
+      showAcopBlockGeneratedCodeOnMobile:
+          prefs.getBool(_showAcopBlockGeneratedCodeOnMobileKey) ?? false,
       reduceMotion: prefs.getBool(_reduceMotionKey) ?? false,
       showChatAvatars: prefs.getBool(_showChatAvatarsKey) ?? true,
       enablePat: prefs.getBool(_enablePatKey) ?? true,
@@ -342,6 +352,10 @@ class CsacPreferences {
     } else {
       await prefs.setString(_acopServerUrlKey, acopServerUrl.trim());
     }
+    await prefs.setBool(
+      _showAcopBlockGeneratedCodeOnMobileKey,
+      showAcopBlockGeneratedCodeOnMobile,
+    );
     await prefs.setBool(_reduceMotionKey, reduceMotion);
     await prefs.setBool(_showChatAvatarsKey, showChatAvatars);
     await prefs.setBool(_enablePatKey, enablePat);
@@ -1114,6 +1128,22 @@ class ChatHintStore {
   const ChatHintStore._();
 
   static const _seenKey = 'csac.chat_hint.seen';
+
+  static Future<bool> isSeen() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_seenKey) ?? false;
+  }
+
+  static Future<void> markSeen() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_seenKey, true);
+  }
+}
+
+class AcopQuickEditNoticeStore {
+  const AcopQuickEditNoticeStore._();
+
+  static const _seenKey = 'csac.acop.quick_edit_notice.seen';
 
   static Future<bool> isSeen() async {
     final prefs = await SharedPreferences.getInstance();

@@ -458,6 +458,9 @@ class _AcopPlatformShellState extends State<AcopPlatformShell> {
       text: widget.state.preferences.acopServerUrl,
     );
     unawaited(refreshBots());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(showQuickEditNoticeIfNeeded());
+    });
   }
 
   @override
@@ -521,6 +524,54 @@ class _AcopPlatformShellState extends State<AcopPlatformShell> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> showQuickEditNoticeIfNeeded() async {
+    if (await AcopQuickEditNoticeStore.isSeen()) {
+      return;
+    }
+    await AcopQuickEditNoticeStore.markSeen();
+    if (!mounted) {
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(context.strings.text('ACOP quick edit mode')),
+        content: Text(
+          context.strings.text(
+            'This mode is only for quick editing. For more features, please use the website: https://acop.csac.chat/',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(context.strings.text('Got it')),
+          ),
+          FilledButton.icon(
+            onPressed: () async {
+              final navigator = Navigator.of(context);
+              final copiedText = context.strings.text('Link copied.');
+              final opened = await launchUrl(
+                Uri.parse('https://acop.csac.chat/'),
+                mode: LaunchMode.externalApplication,
+              );
+              if (!opened) {
+                await Clipboard.setData(
+                  const ClipboardData(text: 'https://acop.csac.chat/'),
+                );
+                showSnack(copiedText);
+              }
+              if (navigator.mounted) {
+                navigator.pop();
+              }
+            },
+            icon: const Icon(Icons.open_in_new),
+            label: Text(context.strings.text('Open website')),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> createBot() async {
@@ -785,6 +836,8 @@ class _AcopPlatformShellState extends State<AcopPlatformShell> {
         savingServer: savingServer,
         onSaveServer: saveServer,
         onResetServer: serverUrl.clear,
+        onShowBlockCodeChanged:
+            widget.state.updateShowAcopBlockGeneratedCodeOnMobile,
         onLogout: logout,
         onSwitchToChat: switchToChatMode,
       ),
@@ -1021,6 +1074,7 @@ class _AcopAccountPage extends StatelessWidget {
     required this.savingServer,
     required this.onSaveServer,
     required this.onResetServer,
+    required this.onShowBlockCodeChanged,
     required this.onLogout,
     required this.onSwitchToChat,
   });
@@ -1030,6 +1084,7 @@ class _AcopAccountPage extends StatelessWidget {
   final bool savingServer;
   final Future<void> Function() onSaveServer;
   final VoidCallback onResetServer;
+  final Future<void> Function(bool enabled) onShowBlockCodeChanged;
   final Future<void> Function() onLogout;
   final Future<void> Function() onSwitchToChat;
 
@@ -1043,6 +1098,26 @@ class _AcopAccountPage extends StatelessWidget {
         _AcopHeaderRow(
           title: strings.text('Developer account'),
           subtitle: state.acopClient.baseUrl,
+        ),
+        const SizedBox(height: 12),
+        _SettingsSectionTitle(strings.text('Block editor')),
+        Card(
+          elevation: 0,
+          child: _RoundedInkClip(
+            child: SwitchListTile(
+              secondary: const Icon(Icons.code_outlined),
+              title: Text(
+                strings.text('Show generated code in mobile block editor'),
+              ),
+              subtitle: Text(
+                strings.text(
+                  'When off, the mobile block editor only shows blocks. Desktop still shows generated code.',
+                ),
+              ),
+              value: state.preferences.showAcopBlockGeneratedCodeOnMobile,
+              onChanged: (value) => unawaited(onShowBlockCodeChanged(value)),
+            ),
+          ),
         ),
         const SizedBox(height: 12),
         Card(
@@ -1411,7 +1486,10 @@ class _AcopBotDetailScreenState extends State<AcopBotDetailScreen> {
     final strings = context.strings;
     final draft = await Navigator.of(context).push<_AcopScriptDraft>(
       MaterialPageRoute<_AcopScriptDraft>(
-        builder: (context) => const _AcopScriptEditorScreen(),
+        builder: (context) => _AcopScriptEditorScreen(
+          showGeneratedCodeOnMobile:
+              widget.state.preferences.showAcopBlockGeneratedCodeOnMobile,
+        ),
       ),
     );
     if (draft == null || !mounted) {
@@ -1438,7 +1516,11 @@ class _AcopBotDetailScreenState extends State<AcopBotDetailScreen> {
     }
     final draft = await Navigator.of(context).push<_AcopScriptDraft>(
       MaterialPageRoute<_AcopScriptDraft>(
-        builder: (context) => _AcopScriptEditorScreen(script: loaded),
+        builder: (context) => _AcopScriptEditorScreen(
+          script: loaded,
+          showGeneratedCodeOnMobile:
+              widget.state.preferences.showAcopBlockGeneratedCodeOnMobile,
+        ),
       ),
     );
     if (draft == null || !mounted) {
@@ -2301,9 +2383,13 @@ class _AcopScriptDraft {
 }
 
 class _AcopScriptEditorScreen extends StatefulWidget {
-  const _AcopScriptEditorScreen({this.script});
+  const _AcopScriptEditorScreen({
+    this.script,
+    required this.showGeneratedCodeOnMobile,
+  });
 
   final AcopScript? script;
+  final bool showGeneratedCodeOnMobile;
 
   @override
   State<_AcopScriptEditorScreen> createState() =>
@@ -2313,84 +2399,174 @@ class _AcopScriptEditorScreen extends StatefulWidget {
 class _AcopScriptEditorScreenState extends State<_AcopScriptEditorScreen> {
   late final TextEditingController name;
   late final CodeLineEditingController content;
+  late final String initialName;
+  late final String initialContent;
+  bool allowPop = false;
+  bool draftRefreshScheduled = false;
 
   @override
   void initState() {
     super.initState();
-    name = TextEditingController(text: widget.script?.scriptName ?? '');
-    content = CodeLineEditingController.fromText(
-      widget.script?.scriptContent.isNotEmpty == true
-          ? widget.script!.scriptContent
-          : _defaultAcopScriptTemplate,
-    );
+    initialName = widget.script?.scriptName ?? '';
+    initialContent = widget.script?.scriptContent.isNotEmpty == true
+        ? widget.script!.scriptContent
+        : _defaultAcopScriptTemplate;
+    name = TextEditingController(text: initialName);
+    content = CodeLineEditingController.fromText(initialContent);
+    name.addListener(handleDraftChanged);
+    content.addListener(handleDraftChanged);
   }
 
   @override
   void dispose() {
+    name.removeListener(handleDraftChanged);
+    content.removeListener(handleDraftChanged);
     name.dispose();
     content.dispose();
     super.dispose();
   }
 
-  void submit() {
-    if (name.text.trim().isEmpty) {
+  bool get hasUnsavedChanges {
+    return name.text != initialName || content.text != initialContent;
+  }
+
+  void handleDraftChanged() {
+    if (!mounted || draftRefreshScheduled) {
       return;
     }
+    draftRefreshScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      draftRefreshScheduled = false;
+      if (!mounted) {
+        return;
+      }
+      setState(() {});
+    });
+  }
+
+  bool submit() {
+    if (name.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(context.strings.text('Script name is required.')),
+        ),
+      );
+      return false;
+    }
+    allowPop = true;
     Navigator.of(
       context,
     ).pop(_AcopScriptDraft(name: name.text.trim(), content: content.text));
+    return true;
+  }
+
+  Future<void> openBlockEditor() async {
+    final draft = await Navigator.of(context).push<_AcopBlockDraft>(
+      MaterialPageRoute<_AcopBlockDraft>(
+        builder: (context) => _AcopBlockEditorScreen(
+          initialCode: content.text,
+          showGeneratedCodeOnMobile: widget.showGeneratedCodeOnMobile,
+        ),
+      ),
+    );
+    if (draft == null || !mounted) {
+      return;
+    }
+    content.text = draft.code;
+  }
+
+  Future<void> handlePopAttempt() async {
+    if (!hasUnsavedChanges) {
+      allowPop = true;
+      Navigator.of(context).pop();
+      return;
+    }
+    final action = await showDialog<_AcopUnsavedExitAction>(
+      context: context,
+      builder: (context) => const _AcopUnsavedChangesDialog(),
+    );
+    if (!mounted) {
+      return;
+    }
+    switch (action) {
+      case _AcopUnsavedExitAction.save:
+        submit();
+        break;
+      case _AcopUnsavedExitAction.discard:
+        allowPop = true;
+        Navigator.of(context).pop();
+        break;
+      case _AcopUnsavedExitAction.cancel:
+      case null:
+        break;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final strings = context.strings;
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          strings.text(widget.script == null ? 'Create script' : 'Edit script'),
+    return PopScope<_AcopScriptDraft>(
+      canPop: allowPop || !hasUnsavedChanges,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) {
+          unawaited(handlePopAttempt());
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(
+            strings.text(
+              widget.script == null ? 'Create script' : 'Edit script',
+            ),
+          ),
+          actions: [
+            IconButton(
+              tooltip: strings.text('JavaScript guide'),
+              onPressed: () => openAcopScriptGuide(context),
+              icon: const Icon(Icons.help_outline),
+            ),
+            IconButton(
+              tooltip: strings.text('JavaScript block editor'),
+              onPressed: openBlockEditor,
+              icon: const Icon(Icons.account_tree_outlined),
+            ),
+            TextButton.icon(
+              onPressed: submit,
+              icon: const Icon(Icons.save_outlined),
+              label: Text(strings.text('Save')),
+            ),
+            const SizedBox(width: 8),
+          ],
         ),
-        actions: [
-          IconButton(
-            tooltip: strings.text('JavaScript guide'),
-            onPressed: () => openAcopScriptGuide(context),
-            icon: const Icon(Icons.help_outline),
-          ),
-          TextButton.icon(
-            onPressed: submit,
-            icon: const Icon(Icons.save_outlined),
-            label: Text(strings.text('Save')),
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-          child: Column(
-            children: [
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 1100),
-                child: TextField(
-                  controller: name,
-                  autofocus: true,
-                  textInputAction: TextInputAction.next,
-                  decoration: InputDecoration(
-                    labelText: strings.text('Script name'),
-                    border: const OutlineInputBorder(),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Expanded(
-                child: ConstrainedBox(
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            child: Column(
+              children: [
+                ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 1100),
-                  child: _AcopCodeEditor(
-                    controller: content,
-                    label: strings.text('Script content'),
+                  child: TextField(
+                    controller: name,
+                    autofocus: true,
+                    textInputAction: TextInputAction.next,
+                    decoration: InputDecoration(
+                      labelText: strings.text('Script name'),
+                      border: const OutlineInputBorder(),
+                    ),
                   ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 12),
+                Expanded(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1100),
+                    child: _AcopCodeEditor(
+                      controller: content,
+                      label: strings.text('Script content'),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

@@ -69,6 +69,7 @@ import 'src/update_checker.dart';
 
 part 'src/ui/app_shell.dart';
 part 'src/ui/acop_platform.dart';
+part 'src/ui/acop_block_editor.dart';
 part 'src/ui/home.dart';
 part 'src/ui/discovery.dart';
 part 'src/ui/notifications.dart';

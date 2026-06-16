@@ -567,6 +567,14 @@ class CsacAppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> updateShowAcopBlockGeneratedCodeOnMobile(bool enabled) async {
+    preferences = preferences.copyWith(
+      showAcopBlockGeneratedCodeOnMobile: enabled,
+    );
+    await preferences.save();
+    notifyListeners();
+  }
+
   Future<void> updateMobileEnterKeyBehavior(
     MobileEnterKeyBehavior behavior,
   ) async {
