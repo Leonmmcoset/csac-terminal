@@ -993,5 +993,12 @@
   "CsAC username": "CsAC 用户名",
   "Event type": "事件类型",
   "Reset bot token?": "重置机器人 Token？",
-  "Bot": "机器人"
+  "Bot": "机器人",
+  "Upload avatar": "上传头像",
+  "Bot avatar updated.": "机器人头像已更新。",
+  "Bot JavaScript guide": "机器人 JavaScript 开发文档",
+  "JavaScript guide": "JavaScript 文档",
+  "Unable to load the guide.": "无法加载文档。",
+  "Version {version}": "版本 {version}",
+  "Updated {time}": "更新于 {time}"
 }

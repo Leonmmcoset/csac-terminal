@@ -999,5 +999,12 @@
   "Event type": "Event type",
   "Reset bot token?": "Reset bot token?"
 ,
-  "Bot": "Bot"
+  "Bot": "Bot",
+  "Upload avatar": "Upload avatar",
+  "Bot avatar updated.": "Bot avatar updated.",
+  "Bot JavaScript guide": "Bot JavaScript guide",
+  "JavaScript guide": "JavaScript guide",
+  "Unable to load the guide.": "Unable to load the guide.",
+  "Version {version}": "Version {version}",
+  "Updated {time}": "Updated {time}"
 }

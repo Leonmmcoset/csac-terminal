@@ -575,6 +575,33 @@ class _AcopPlatformShellState extends State<AcopPlatformShell> {
     }
   }
 
+  Future<void> uploadBotAvatar(AcopBot bot) async {
+    final strings = context.strings;
+    final picked = await openFile(
+      acceptedTypeGroups: <XTypeGroup>[
+        XTypeGroup(
+          label: strings.text('Images'),
+          extensions: _acopAvatarExtensions,
+        ),
+      ],
+    );
+    if (picked == null || !mounted) {
+      return;
+    }
+    try {
+      final bytes = await picked.readAsBytes();
+      await widget.state.acopClient.uploadBotAvatar(
+        botId: bot.botId,
+        avatarBytes: bytes,
+        fileName: picked.name,
+      );
+      await refreshBots();
+      showSnack(strings.text('Bot avatar updated.'));
+    } catch (err) {
+      showSnack(err.toString());
+    }
+  }
+
   Future<void> resetBotToken(AcopBot bot) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -733,17 +760,20 @@ class _AcopPlatformShellState extends State<AcopPlatformShell> {
     final pages = [
       _AcopBotsPage(
         bots: bots,
+        assetBaseUrl: widget.state.acopClient.baseUrl,
         loading: loadingBots,
         error: botsError,
         onRefresh: refreshBots,
         onCreate: createBot,
         onOpen: openBot,
         onEdit: editBot,
+        onUploadAvatar: uploadBotAvatar,
         onResetToken: resetBotToken,
         onDelete: deleteBot,
       ),
       _AcopAdminPage(
         bots: adminBots,
+        assetBaseUrl: widget.state.acopClient.baseUrl,
         loading: loadingAdminBots,
         error: adminError,
         onRefresh: refreshAdminBots,
@@ -763,6 +793,11 @@ class _AcopPlatformShellState extends State<AcopPlatformShell> {
       appBar: AppBar(
         title: Text(strings.text('CsAC Open Platform')),
         actions: [
+          IconButton(
+            tooltip: strings.text('Bot JavaScript guide'),
+            onPressed: () => openAcopScriptGuide(context),
+            icon: const Icon(Icons.help_outline),
+          ),
           IconButton(
             tooltip: strings.text('Refresh'),
             onPressed: selectedIndex == 1 ? refreshAdminBots : refreshBots,
@@ -835,23 +870,27 @@ class _AcopPlatformShellState extends State<AcopPlatformShell> {
 class _AcopBotsPage extends StatelessWidget {
   const _AcopBotsPage({
     required this.bots,
+    required this.assetBaseUrl,
     required this.loading,
     required this.error,
     required this.onRefresh,
     required this.onCreate,
     required this.onOpen,
     required this.onEdit,
+    required this.onUploadAvatar,
     required this.onResetToken,
     required this.onDelete,
   });
 
   final List<AcopBot> bots;
+  final String assetBaseUrl;
   final bool loading;
   final String? error;
   final Future<void> Function() onRefresh;
   final Future<void> Function() onCreate;
   final Future<void> Function(AcopBot bot) onOpen;
   final Future<void> Function(AcopBot bot) onEdit;
+  final Future<void> Function(AcopBot bot) onUploadAvatar;
   final Future<void> Function(AcopBot bot) onResetToken;
   final Future<void> Function(AcopBot bot) onDelete;
 
@@ -891,8 +930,10 @@ class _AcopBotsPage extends StatelessWidget {
                       if (i > 0) const Divider(height: 1),
                       _AcopBotTile(
                         bot: bots[i],
+                        assetBaseUrl: assetBaseUrl,
                         onTap: () => onOpen(bots[i]),
                         onEdit: () => onEdit(bots[i]),
+                        onUploadAvatar: () => onUploadAvatar(bots[i]),
                         onResetToken: () => onResetToken(bots[i]),
                         onDelete: () => onDelete(bots[i]),
                       ),
@@ -910,6 +951,7 @@ class _AcopBotsPage extends StatelessWidget {
 class _AcopAdminPage extends StatelessWidget {
   const _AcopAdminPage({
     required this.bots,
+    required this.assetBaseUrl,
     required this.loading,
     required this.error,
     required this.onRefresh,
@@ -917,6 +959,7 @@ class _AcopAdminPage extends StatelessWidget {
   });
 
   final List<AcopBot> bots;
+  final String assetBaseUrl;
   final bool loading;
   final String? error;
   final Future<void> Function() onRefresh;
@@ -956,7 +999,10 @@ class _AcopAdminPage extends StatelessWidget {
                   children: [
                     for (var i = 0; i < bots.length; i++) ...[
                       if (i > 0) const Divider(height: 1),
-                      _AcopAdminBotTile(bot: bots[i]),
+                      _AcopAdminBotTile(
+                        bot: bots[i],
+                        assetBaseUrl: assetBaseUrl,
+                      ),
                     ],
                   ],
                 ),
@@ -1120,24 +1166,32 @@ class _AcopAccountPage extends StatelessWidget {
 class _AcopBotTile extends StatelessWidget {
   const _AcopBotTile({
     required this.bot,
+    required this.assetBaseUrl,
     required this.onTap,
     required this.onEdit,
+    required this.onUploadAvatar,
     required this.onResetToken,
     required this.onDelete,
   });
 
   final AcopBot bot;
+  final String assetBaseUrl;
   final VoidCallback onTap;
   final VoidCallback onEdit;
+  final VoidCallback onUploadAvatar;
   final VoidCallback onResetToken;
   final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
     final strings = context.strings;
+    final avatarUrl = acopAssetUrl(bot.botAvatar, assetBaseUrl);
     return ListTile(
-      leading: CircleAvatar(
-        child: Icon(bot.isOnline ? Icons.smart_toy : Icons.smart_toy_outlined),
+      leading: _Avatar(
+        url: avatarUrl,
+        fallback: bot.isOnline ? Icons.smart_toy : Icons.smart_toy_outlined,
+        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+        foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
       ),
       title: Text(
         bot.botName.isEmpty ? 'Bot #${bot.botId}' : bot.botName,
@@ -1160,6 +1214,9 @@ class _AcopBotTile extends StatelessWidget {
             case 'edit':
               onEdit();
               break;
+            case 'avatar':
+              onUploadAvatar();
+              break;
             case 'token':
               onResetToken();
               break;
@@ -1170,6 +1227,10 @@ class _AcopBotTile extends StatelessWidget {
         },
         itemBuilder: (context) => [
           PopupMenuItem(value: 'edit', child: Text(strings.text('Edit'))),
+          PopupMenuItem(
+            value: 'avatar',
+            child: Text(strings.text('Upload avatar')),
+          ),
           PopupMenuItem(
             value: 'token',
             child: Text(strings.text('Reset token')),
@@ -1183,15 +1244,22 @@ class _AcopBotTile extends StatelessWidget {
 }
 
 class _AcopAdminBotTile extends StatelessWidget {
-  const _AcopAdminBotTile({required this.bot});
+  const _AcopAdminBotTile({required this.bot, required this.assetBaseUrl});
 
   final AcopBot bot;
+  final String assetBaseUrl;
 
   @override
   Widget build(BuildContext context) {
     final strings = context.strings;
+    final avatarUrl = acopAssetUrl(bot.botAvatar, assetBaseUrl);
     return ListTile(
-      leading: const CircleAvatar(child: Icon(Icons.smart_toy_outlined)),
+      leading: _Avatar(
+        url: avatarUrl,
+        fallback: Icons.smart_toy_outlined,
+        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+        foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
+      ),
       title: Text(bot.botName.isEmpty ? 'Bot #${bot.botId}' : bot.botName),
       subtitle: Text(
         [
@@ -1341,9 +1409,10 @@ class _AcopBotDetailScreenState extends State<AcopBotDetailScreen> {
 
   Future<void> createScript() async {
     final strings = context.strings;
-    final draft = await showDialog<_AcopScriptDraft>(
-      context: context,
-      builder: (context) => const _AcopScriptDialog(),
+    final draft = await Navigator.of(context).push<_AcopScriptDraft>(
+      MaterialPageRoute<_AcopScriptDraft>(
+        builder: (context) => const _AcopScriptEditorScreen(),
+      ),
     );
     if (draft == null || !mounted) {
       return;
@@ -1367,9 +1436,10 @@ class _AcopBotDetailScreenState extends State<AcopBotDetailScreen> {
     if (!mounted) {
       return;
     }
-    final draft = await showDialog<_AcopScriptDraft>(
-      context: context,
-      builder: (context) => _AcopScriptDialog(script: loaded),
+    final draft = await Navigator.of(context).push<_AcopScriptDraft>(
+      MaterialPageRoute<_AcopScriptDraft>(
+        builder: (context) => _AcopScriptEditorScreen(script: loaded),
+      ),
     );
     if (draft == null || !mounted) {
       return;
@@ -1454,10 +1524,12 @@ class _AcopBotDetailScreenState extends State<AcopBotDetailScreen> {
       return;
     }
     try {
+      final loaded = await _loadScriptForEdit(script);
       final result = await widget.state.acopClient.testScript(
         scriptId: script.scriptId,
         eventType: draft.eventType,
-        eventData: draft.eventData,
+        eventData: jsonDecode(draft.eventData),
+        scriptContent: loaded.scriptContent,
       );
       if (!mounted) {
         return;
@@ -1472,6 +1544,10 @@ class _AcopBotDetailScreenState extends State<AcopBotDetailScreen> {
     } catch (err) {
       showSnack(err.toString());
     }
+  }
+
+  Future<void> openScriptGuide() {
+    return openAcopScriptGuide(context);
   }
 
   Future<void> requestPermission() async {
@@ -1537,6 +1613,7 @@ class _AcopBotDetailScreenState extends State<AcopBotDetailScreen> {
               onDelete: deleteScript,
               onToggle: toggleScript,
               onTest: testScript,
+              onOpenGuide: openScriptGuide,
             ),
             _AcopLogsTab(
               logs: logs,
@@ -1579,6 +1656,7 @@ class _AcopScriptsTab extends StatelessWidget {
     required this.onDelete,
     required this.onToggle,
     required this.onTest,
+    required this.onOpenGuide,
   });
 
   final List<AcopScript> scripts;
@@ -1590,6 +1668,7 @@ class _AcopScriptsTab extends StatelessWidget {
   final Future<void> Function(AcopScript script) onDelete;
   final Future<void> Function(AcopScript script, bool enabled) onToggle;
   final Future<void> Function(AcopScript script) onTest;
+  final Future<void> Function() onOpenGuide;
 
   @override
   Widget build(BuildContext context) {
@@ -1604,10 +1683,22 @@ class _AcopScriptsTab extends StatelessWidget {
             subtitle: strings.text(
               'Create, edit, toggle and test bot scripts.',
             ),
-            action: FilledButton.icon(
-              onPressed: onCreate,
-              icon: const Icon(Icons.add),
-              label: Text(strings.text('Create script')),
+            action: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.end,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: onOpenGuide,
+                  icon: const Icon(Icons.help_outline),
+                  label: Text(strings.text('JavaScript guide')),
+                ),
+                FilledButton.icon(
+                  onPressed: onCreate,
+                  icon: const Icon(Icons.add),
+                  label: Text(strings.text('Create script')),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 12),
@@ -1632,7 +1723,18 @@ class _AcopScriptsTab extends StatelessWidget {
                               ? 'Script #${scripts[i].scriptId}'
                               : scripts[i].scriptName,
                         ),
-                        subtitle: Text('ID ${scripts[i].scriptId}'),
+                        subtitle: Text(
+                          [
+                            'ID ${scripts[i].scriptId}',
+                            strings.format('Version {version}', {
+                              'version': scripts[i].version,
+                            }),
+                            if (scripts[i].updatedAt > 0)
+                              strings.format('Updated {time}', {
+                                'time': readableTimestamp(scripts[i].updatedAt),
+                              }),
+                          ].join(' | '),
+                        ),
                         value: scripts[i].isEnabled,
                         onChanged: (value) => onToggle(scripts[i], value),
                         controlAffinity: ListTileControlAffinity.trailing,
@@ -1718,26 +1820,44 @@ class _AcopLogsTab extends StatelessWidget {
             runSpacing: 12,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              DropdownMenu<String>(
-                initialSelection: level,
-                label: Text(strings.text('Log level')),
-                dropdownMenuEntries: [
-                  DropdownMenuEntry(value: '', label: strings.text('All')),
-                  const DropdownMenuEntry(value: 'log', label: 'log'),
-                  const DropdownMenuEntry(value: 'warn', label: 'warn'),
-                  const DropdownMenuEntry(value: 'error', label: 'error'),
-                ],
-                onSelected: (value) => onLevelChanged(value ?? ''),
+              SizedBox(
+                width: 180,
+                child: DropdownButtonFormField<String>(
+                  initialValue: level,
+                  decoration: InputDecoration(
+                    labelText: strings.text('Log level'),
+                    border: const OutlineInputBorder(),
+                  ),
+                  items: [
+                    DropdownMenuItem(
+                      value: '',
+                      child: Text(strings.text('All')),
+                    ),
+                    const DropdownMenuItem(value: 'log', child: Text('log')),
+                    const DropdownMenuItem(value: 'warn', child: Text('warn')),
+                    const DropdownMenuItem(
+                      value: 'error',
+                      child: Text('error'),
+                    ),
+                  ],
+                  onChanged: (value) => onLevelChanged(value ?? ''),
+                ),
               ),
-              DropdownMenu<int>(
-                initialSelection: limit,
-                label: Text(strings.text('Limit')),
-                dropdownMenuEntries: const [
-                  DropdownMenuEntry(value: 50, label: '50'),
-                  DropdownMenuEntry(value: 100, label: '100'),
-                  DropdownMenuEntry(value: 200, label: '200'),
-                ],
-                onSelected: (value) => onLimitChanged(value ?? 50),
+              SizedBox(
+                width: 180,
+                child: DropdownButtonFormField<int>(
+                  initialValue: limit,
+                  decoration: InputDecoration(
+                    labelText: strings.text('Limit'),
+                    border: const OutlineInputBorder(),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 50, child: Text('50')),
+                    DropdownMenuItem(value: 100, child: Text('100')),
+                    DropdownMenuItem(value: 200, child: Text('200')),
+                  ],
+                  onChanged: (value) => onLimitChanged(value ?? 50),
+                ),
               ),
             ],
           ),
@@ -2180,25 +2300,26 @@ class _AcopScriptDraft {
   final String content;
 }
 
-class _AcopScriptDialog extends StatefulWidget {
-  const _AcopScriptDialog({this.script});
+class _AcopScriptEditorScreen extends StatefulWidget {
+  const _AcopScriptEditorScreen({this.script});
 
   final AcopScript? script;
 
   @override
-  State<_AcopScriptDialog> createState() => _AcopScriptDialogState();
+  State<_AcopScriptEditorScreen> createState() =>
+      _AcopScriptEditorScreenState();
 }
 
-class _AcopScriptDialogState extends State<_AcopScriptDialog> {
+class _AcopScriptEditorScreenState extends State<_AcopScriptEditorScreen> {
   late final TextEditingController name;
-  late final TextEditingController content;
+  late final CodeLineEditingController content;
 
   @override
   void initState() {
     super.initState();
     name = TextEditingController(text: widget.script?.scriptName ?? '');
-    content = TextEditingController(
-      text: widget.script?.scriptContent.isNotEmpty == true
+    content = CodeLineEditingController.fromText(
+      widget.script?.scriptContent.isNotEmpty == true
           ? widget.script!.scriptContent
           : _defaultAcopScriptTemplate,
     );
@@ -2223,47 +2344,56 @@ class _AcopScriptDialogState extends State<_AcopScriptDialog> {
   @override
   Widget build(BuildContext context) {
     final strings = context.strings;
-    return AlertDialog(
-      title: Text(
-        strings.text(widget.script == null ? 'Create script' : 'Edit script'),
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(
+          strings.text(widget.script == null ? 'Create script' : 'Edit script'),
+        ),
+        actions: [
+          IconButton(
+            tooltip: strings.text('JavaScript guide'),
+            onPressed: () => openAcopScriptGuide(context),
+            icon: const Icon(Icons.help_outline),
+          ),
+          TextButton.icon(
+            onPressed: submit,
+            icon: const Icon(Icons.save_outlined),
+            label: Text(strings.text('Save')),
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
-      content: _AcopDialogBody(
-        maxWidth: 680,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: name,
-              autofocus: true,
-              textInputAction: TextInputAction.next,
-              decoration: InputDecoration(
-                labelText: strings.text('Script name'),
-                border: const OutlineInputBorder(),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          child: Column(
+            children: [
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1100),
+                child: TextField(
+                  controller: name,
+                  autofocus: true,
+                  textInputAction: TextInputAction.next,
+                  decoration: InputDecoration(
+                    labelText: strings.text('Script name'),
+                    border: const OutlineInputBorder(),
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: content,
-              minLines: 12,
-              maxLines: 18,
-              keyboardType: TextInputType.multiline,
-              style: const TextStyle(fontFamily: 'monospace'),
-              decoration: InputDecoration(
-                labelText: strings.text('Script content'),
-                alignLabelWithHint: true,
-                border: const OutlineInputBorder(),
+              const SizedBox(height: 12),
+              Expanded(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1100),
+                  child: _AcopCodeEditor(
+                    controller: content,
+                    label: strings.text('Script content'),
+                  ),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(strings.text('Cancel')),
-        ),
-        FilledButton(onPressed: submit, child: Text(strings.text('Save'))),
-      ],
     );
   }
 }
@@ -2348,6 +2478,60 @@ class _AcopTestEventDialogState extends State<_AcopTestEventDialog> {
         ),
         FilledButton(onPressed: submit, child: Text(strings.text('Run test'))),
       ],
+    );
+  }
+}
+
+class _AcopScriptGuideScreen extends StatelessWidget {
+  const _AcopScriptGuideScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    const assetPath = 'assets/acop/bot_script_js_guide.md';
+    return Scaffold(
+      appBar: AppBar(title: Text(strings.text('JavaScript guide'))),
+      body: SafeArea(
+        child: FutureBuilder<String>(
+          future: rootBundle.loadString(assetPath),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text(
+                    strings.text('Unable to load the guide.'),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              );
+            }
+            return Markdown(
+              data: snapshot.data ?? '',
+              selectable: true,
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+              styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context))
+                  .copyWith(
+                    h1: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                    h2: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                    p: Theme.of(
+                      context,
+                    ).textTheme.bodyMedium?.copyWith(height: 1.55),
+                    code: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
+                  ),
+            );
+          },
+        ),
+      ),
     );
   }
 }
@@ -2586,6 +2770,79 @@ class _AcopJsonResultDialog extends StatelessWidget {
   }
 }
 
+class _AcopCodeEditor extends StatelessWidget {
+  const _AcopCodeEditor({required this.controller, required this.label});
+
+  final CodeLineEditingController controller;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Text(label, style: theme.textTheme.labelLarge),
+        ),
+        Expanded(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surface,
+                border: Border.all(color: theme.colorScheme.outlineVariant),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: ExcludeSemantics(
+                child: CodeEditor(
+                  controller: controller,
+                  wordWrap: true,
+                  autocompleteSymbols: true,
+                  padding: const EdgeInsets.all(12),
+                  style: CodeEditorStyle(
+                    fontFamily: 'Consolas',
+                    fontFamilyFallback: const [
+                      'SF Mono',
+                      'Menlo',
+                      'Monaco',
+                      'Liberation Mono',
+                      'DejaVu Sans Mono',
+                      'Noto Sans Mono CJK SC',
+                      'Noto Sans Mono',
+                      'monospace',
+                    ],
+                    fontSize: theme.textTheme.bodyMedium?.fontSize,
+                    fontHeight: 1.45,
+                    textColor: theme.colorScheme.onSurface,
+                    backgroundColor: theme.colorScheme.surface,
+                    cursorColor: theme.colorScheme.primary,
+                    selectionColor: theme.colorScheme.primary.withValues(
+                      alpha: 0.24,
+                    ),
+                    cursorLineColor: theme.colorScheme.primary.withValues(
+                      alpha: 0.06,
+                    ),
+                    codeTheme: CodeHighlightTheme(
+                      languages: {
+                        'javascript': CodeHighlightThemeMode(
+                          mode: re_highlight_js.langJavascript,
+                        ),
+                      },
+                      theme: re_highlight_github.githubTheme,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _AcopDialogBody extends StatelessWidget {
   const _AcopDialogBody({required this.child, this.maxWidth = 520});
 
@@ -2610,6 +2867,33 @@ String _acopDeveloperStatusLabel(BuildContext context, int status) {
   };
 }
 
+Future<void> openAcopScriptGuide(BuildContext context) {
+  return Navigator.of(context).push(
+    MaterialPageRoute<void>(builder: (_) => const _AcopScriptGuideScreen()),
+  );
+}
+
+String acopAssetUrl(String value, String baseUrl) {
+  final text = value.trim();
+  if (text.isEmpty) {
+    return '';
+  }
+  if (text.startsWith('http://') ||
+      text.startsWith('https://') ||
+      text.startsWith('data:')) {
+    return text;
+  }
+  final base = Uri.tryParse(baseUrl);
+  if (base == null || !base.hasScheme || base.host.isEmpty) {
+    return normalizeApiUrl(text);
+  }
+  final origin = base.replace(path: '', query: null, fragment: null);
+  if (text.startsWith('/')) {
+    return origin.resolve(text).toString();
+  }
+  return origin.resolve('/${text.replaceFirst(RegExp(r'^/+'), '')}').toString();
+}
+
 String _formatJson(Object? value) {
   try {
     return const JsonEncoder.withIndent('  ').convert(value);
@@ -2618,10 +2902,26 @@ String _formatJson(Object? value) {
   }
 }
 
-const _defaultAcopScriptTemplate = '''
-function onEvent(event) {
-  if (event.message === "ping") {
-    return "pong";
+const _defaultAcopScriptTemplate = r'''
+bot.command('/help', async (ctx) => {
+  await ctx.reply('你好，我是 CsAC Bot。可用指令：/help, /ping')
+})
+
+bot.command('/ping', async (ctx) => {
+  await ctx.reply('pong')
+})
+
+bot.on('private.message', async (ctx) => {
+  if (ctx.text.trim() === '测试bot') {
+    await ctx.reply('bot正在运行')
   }
-}
+})
+
+bot.on('group.message', async (ctx) => {
+  if (ctx.text.includes('你好')) {
+    await ctx.reply(`你好，${ctx.sender.nickname || ctx.sender.uid}`)
+  }
+})
 ''';
+
+const _acopAvatarExtensions = <String>['png', 'jpg', 'jpeg', 'gif', 'webp'];

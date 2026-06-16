@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -61,6 +62,10 @@ class AcopBot {
     required this.canHttp,
     required this.devName,
     required this.email,
+    required this.botAvatar,
+    required this.lastOnline,
+    required this.createdAt,
+    required this.nickname,
     this.botToken = '',
   });
 
@@ -75,6 +80,10 @@ class AcopBot {
   final int canHttp;
   final String devName;
   final String email;
+  final String botAvatar;
+  final int lastOnline;
+  final int createdAt;
+  final String nickname;
   final String botToken;
 
   bool get isOnline => online == 1;
@@ -92,6 +101,10 @@ class AcopBot {
       canHttp: _asInt(json['can_http']),
       devName: _asString(json['dev_name']),
       email: _asString(json['email']),
+      botAvatar: _firstString(json, const ['bot_avatar', 'avatar']),
+      lastOnline: _asInt(json['last_online']),
+      createdAt: _asInt(json['created_at']),
+      nickname: _asString(json['nickname']),
       botToken: _asString(json['bot_token']),
     );
   }
@@ -104,6 +117,9 @@ class AcopScript {
     required this.scriptName,
     required this.scriptContent,
     required this.enabled,
+    required this.version,
+    required this.createdAt,
+    required this.updatedAt,
   });
 
   final int scriptId;
@@ -111,6 +127,9 @@ class AcopScript {
   final String scriptName;
   final String scriptContent;
   final int enabled;
+  final int version;
+  final int createdAt;
+  final int updatedAt;
 
   bool get isEnabled => enabled == 1;
 
@@ -121,6 +140,9 @@ class AcopScript {
       scriptName: _asString(json['script_name']),
       scriptContent: _asString(json['script_content']),
       enabled: _asInt(json['enabled'], fallback: 1),
+      version: _asInt(json['version'], fallback: 1),
+      createdAt: _asInt(json['created_at']),
+      updatedAt: _asInt(json['updated_at']),
     );
   }
 
@@ -128,6 +150,9 @@ class AcopScript {
     String? scriptName,
     String? scriptContent,
     int? enabled,
+    int? version,
+    int? createdAt,
+    int? updatedAt,
   }) {
     return AcopScript(
       scriptId: scriptId,
@@ -135,18 +160,27 @@ class AcopScript {
       scriptName: scriptName ?? this.scriptName,
       scriptContent: scriptContent ?? this.scriptContent,
       enabled: enabled ?? this.enabled,
+      version: version ?? this.version,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 }
 
 class AcopLogEntry {
   const AcopLogEntry({
+    required this.id,
+    required this.botId,
+    required this.scriptId,
     required this.level,
     required this.message,
     required this.createdAt,
     required this.raw,
   });
 
+  final int id;
+  final int botId;
+  final int scriptId;
   final String level;
   final String message;
   final String createdAt;
@@ -154,8 +188,11 @@ class AcopLogEntry {
 
   factory AcopLogEntry.fromJson(Map<String, dynamic> json) {
     return AcopLogEntry(
+      id: _asInt(json['id']),
+      botId: _asInt(json['bot_id']),
+      scriptId: _asInt(json['script_id']),
       level: _asString(json['level'], fallback: 'log'),
-      message: _firstString(json, const ['message', 'msg', 'content', 'log']),
+      message: _firstString(json, const ['content', 'message', 'msg', 'log']),
       createdAt: _firstString(json, const ['created_at', 'time', 'created']),
       raw: Map<String, dynamic>.from(json),
     );
@@ -170,6 +207,8 @@ class AcopPermissionRequest {
     required this.reason,
     required this.status,
     required this.adminReply,
+    required this.createdAt,
+    required this.handledAt,
   });
 
   final int requestId;
@@ -178,6 +217,8 @@ class AcopPermissionRequest {
   final String reason;
   final int status;
   final String adminReply;
+  final int createdAt;
+  final int handledAt;
 
   factory AcopPermissionRequest.fromJson(Map<String, dynamic> json) {
     return AcopPermissionRequest(
@@ -187,6 +228,8 @@ class AcopPermissionRequest {
       reason: _asString(json['reason']),
       status: _asInt(json['status']),
       adminReply: _asString(json['admin_reply']),
+      createdAt: _asInt(json['created_at']),
+      handledAt: _asInt(json['handled_at']),
     );
   }
 }
@@ -354,14 +397,37 @@ class AcopApiClient {
 
   Future<void> updateBot({
     required int botId,
-    required String botName,
-    required String botDesc,
+    String? botName,
+    String? botDesc,
+    String? botAvatar,
   }) async {
     await postForm('/bot/update', <String, String>{
       'bot_id': '$botId',
-      'bot_name': botName.trim(),
-      'bot_desc': botDesc.trim(),
+      if (botName != null && botName.trim().isNotEmpty)
+        'bot_name': botName.trim(),
+      if (botDesc != null && botDesc.trim().isNotEmpty)
+        'bot_desc': botDesc.trim(),
+      if (botAvatar != null) 'bot_avatar': botAvatar.trim(),
     });
+  }
+
+  Future<String> uploadBotAvatar({
+    required int botId,
+    required Uint8List avatarBytes,
+    required String fileName,
+  }) async {
+    final data = await multipart(
+      '/bot/upload_avatar',
+      <String, String>{'bot_id': '$botId'},
+      fileField: 'avatar',
+      fileBytes: avatarBytes,
+      fileName: fileName,
+    );
+    final avatar = _firstString(data, const ['avatar']);
+    if (avatar.isNotEmpty) {
+      return avatar;
+    }
+    return _firstString(_dataMap(data), const ['avatar']);
   }
 
   Future<String> resetBotToken(int botId) async {
@@ -440,12 +506,14 @@ class AcopApiClient {
   Future<Map<String, dynamic>> testScript({
     required int scriptId,
     String eventType = 'group_message',
-    String eventData = '{}',
+    Object? eventData,
+    String? scriptContent,
   }) {
-    return postForm('/script/test', <String, String>{
+    return postJson('/script/test', <String, Object?>{
       'script_id': '$scriptId',
       'event_type': eventType,
-      'event_data': eventData,
+      'event_data': eventData ?? const <String, Object?>{},
+      if (scriptContent != null) 'script_content': scriptContent,
     });
   }
 
@@ -514,6 +582,39 @@ class AcopApiClient {
     });
   }
 
+  Future<Map<String, dynamic>> postJson(
+    String route, [
+    Map<String, Object?>? values,
+  ]) {
+    return _send(() {
+      final request = http.Request('POST', _routeUri(route));
+      request.headers['Content-Type'] = 'application/json';
+      request.body = jsonEncode(values ?? const <String, Object?>{});
+      return request;
+    });
+  }
+
+  Future<Map<String, dynamic>> multipart(
+    String route,
+    Map<String, String> values, {
+    required String fileField,
+    required Uint8List fileBytes,
+    required String fileName,
+  }) {
+    return _send(() {
+      final request = http.MultipartRequest('POST', _routeUri(route));
+      request.fields.addAll(values);
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          fileField,
+          fileBytes,
+          filename: fileName.trim().isEmpty ? 'avatar.png' : fileName.trim(),
+        ),
+      );
+      return request;
+    });
+  }
+
   Future<Map<String, dynamic>> _send(
     http.BaseRequest Function() buildRequest,
   ) async {
@@ -528,7 +629,7 @@ class AcopApiClient {
     if (decoded is! Map<String, dynamic>) {
       throw const AcopApiException('Invalid ACOP response.');
     }
-    if (response.statusCode == 401 || response.statusCode == 403) {
+    if (response.statusCode == 401) {
       throw AcopAuthException(_message(decoded, 'Not logged in.'));
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {

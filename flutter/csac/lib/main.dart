@@ -46,6 +46,9 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path/path.dart' as p;
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:record/record.dart';
+import 'package:re_editor/re_editor.dart';
+import 'package:re_highlight/languages/javascript.dart' as re_highlight_js;
+import 'package:re_highlight/styles/github.dart' as re_highlight_github;
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
