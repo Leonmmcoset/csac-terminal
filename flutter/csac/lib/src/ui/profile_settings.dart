@@ -5999,6 +5999,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'Client mode',
       'CsAC chat',
       'Developer platform',
+      'Force desktop window to mobile width',
+      'Lock the desktop window to a mobile-style width',
+      'Mobile width',
+      'Mobile-style width',
+      'Desktop window',
       'CsAC server address',
       'ACOP server address',
       'HTTP protocol',
@@ -6850,6 +6855,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 ),
                         ),
                       ),
+                      if (!isMobilePlatform) ...[
+                        const SizedBox(height: 12),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          secondary: const Icon(Icons.smartphone_outlined),
+                          title: Text(
+                            strings.text(
+                              'Force desktop window to mobile width',
+                            ),
+                          ),
+                          subtitle: Text(
+                            strings.text(
+                              'Lock the desktop window to a mobile-style width.',
+                            ),
+                          ),
+                          value:
+                              widget.state.preferences.forceDesktopMobileWidth,
+                          onChanged: widget.state.updateForceDesktopMobileWidth,
+                        ),
+                      ],
                       const SizedBox(height: 16),
                       TextField(
                         controller: serverUrl,

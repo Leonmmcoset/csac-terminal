@@ -53,7 +53,8 @@ class CsacPreferences {
     this.chatBackgroundPath = '',
     this.serverUrl = '',
     this.acopServerUrl = '',
-    this.showAcopBlockGeneratedCodeOnMobile = false,
+    this.showAcopBlockGeneratedCode = true,
+    this.forceDesktopMobileWidth = false,
     this.reduceMotion = false,
     this.showChatAvatars = true,
     this.enablePat = true,
@@ -88,8 +89,9 @@ class CsacPreferences {
   static const _chatBackgroundPathKey = 'csac.chat_background_path';
   static const _serverUrlKey = 'csac.server_url';
   static const _acopServerUrlKey = 'csac.acop_server_url';
-  static const _showAcopBlockGeneratedCodeOnMobileKey =
-      'csac.acop.block_editor.show_generated_code_mobile';
+  static const _showAcopBlockGeneratedCodeKey =
+      'csac.acop.block_editor.show_generated_code';
+  static const _forceDesktopMobileWidthKey = 'csac.desktop.force_mobile_width';
   static const _reduceMotionKey = 'csac.reduce_motion';
   static const _showChatAvatarsKey = 'csac.chat.show_avatars';
   static const _enablePatKey = 'csac.chat.enable_pat';
@@ -125,7 +127,8 @@ class CsacPreferences {
   final String chatBackgroundPath;
   final String serverUrl;
   final String acopServerUrl;
-  final bool showAcopBlockGeneratedCodeOnMobile;
+  final bool showAcopBlockGeneratedCode;
+  final bool forceDesktopMobileWidth;
   final bool reduceMotion;
   final bool showChatAvatars;
   final bool enablePat;
@@ -172,7 +175,8 @@ class CsacPreferences {
     String? chatBackgroundPath,
     String? serverUrl,
     String? acopServerUrl,
-    bool? showAcopBlockGeneratedCodeOnMobile,
+    bool? showAcopBlockGeneratedCode,
+    bool? forceDesktopMobileWidth,
     bool? reduceMotion,
     bool? showChatAvatars,
     bool? enablePat,
@@ -211,9 +215,10 @@ class CsacPreferences {
       chatBackgroundPath: chatBackgroundPath ?? this.chatBackgroundPath,
       serverUrl: serverUrl ?? this.serverUrl,
       acopServerUrl: acopServerUrl ?? this.acopServerUrl,
-      showAcopBlockGeneratedCodeOnMobile:
-          showAcopBlockGeneratedCodeOnMobile ??
-          this.showAcopBlockGeneratedCodeOnMobile,
+      showAcopBlockGeneratedCode:
+          showAcopBlockGeneratedCode ?? this.showAcopBlockGeneratedCode,
+      forceDesktopMobileWidth:
+          forceDesktopMobileWidth ?? this.forceDesktopMobileWidth,
       reduceMotion: reduceMotion ?? this.reduceMotion,
       showChatAvatars: showChatAvatars ?? this.showChatAvatars,
       enablePat: enablePat ?? this.enablePat,
@@ -274,8 +279,10 @@ class CsacPreferences {
       acopServerUrl: _acopServerUrlFromPrefs(
         prefs.getString(_acopServerUrlKey),
       ),
-      showAcopBlockGeneratedCodeOnMobile:
-          prefs.getBool(_showAcopBlockGeneratedCodeOnMobileKey) ?? false,
+      showAcopBlockGeneratedCode:
+          prefs.getBool(_showAcopBlockGeneratedCodeKey) ?? true,
+      forceDesktopMobileWidth:
+          prefs.getBool(_forceDesktopMobileWidthKey) ?? false,
       reduceMotion: prefs.getBool(_reduceMotionKey) ?? false,
       showChatAvatars: prefs.getBool(_showChatAvatarsKey) ?? true,
       enablePat: prefs.getBool(_enablePatKey) ?? true,
@@ -353,9 +360,10 @@ class CsacPreferences {
       await prefs.setString(_acopServerUrlKey, acopServerUrl.trim());
     }
     await prefs.setBool(
-      _showAcopBlockGeneratedCodeOnMobileKey,
-      showAcopBlockGeneratedCodeOnMobile,
+      _showAcopBlockGeneratedCodeKey,
+      showAcopBlockGeneratedCode,
     );
+    await prefs.setBool(_forceDesktopMobileWidthKey, forceDesktopMobileWidth);
     await prefs.setBool(_reduceMotionKey, reduceMotion);
     await prefs.setBool(_showChatAvatarsKey, showChatAvatars);
     await prefs.setBool(_enablePatKey, enablePat);

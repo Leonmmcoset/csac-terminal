@@ -1,9 +1,16 @@
 part of '../../main.dart';
 
 class MainShell extends StatefulWidget {
-  const MainShell({super.key, required this.state});
+  const MainShell({
+    super.key,
+    required this.state,
+    required this.navigatorKey,
+    required this.scaffoldMessengerKey,
+  });
 
   final CsacAppState state;
+  final GlobalKey<NavigatorState> navigatorKey;
+  final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey;
 
   @override
   State<MainShell> createState() => _MainShellState();
@@ -367,6 +374,19 @@ class _MainShellState extends State<MainShell> {
         .firstOrNull;
   }
 
+  Future<void> openCommandPalette({
+    Future<void> Function()? onRefresh,
+    Future<void> Function()? onScanQr,
+  }) {
+    return _showCommandPalette(
+      state: widget.state,
+      navigatorKey: widget.navigatorKey,
+      scaffoldMessengerKey: widget.scaffoldMessengerKey,
+      onRefresh: onRefresh,
+      onScanQr: onScanQr,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final unreadChats = totalUnreadChats();
@@ -375,6 +395,9 @@ class _MainShellState extends State<MainShell> {
     final pages = <Widget>[
       ConversationScreen(
         state: widget.state,
+        navigatorKey: widget.navigatorKey,
+        scaffoldMessengerKey: widget.scaffoldMessengerKey,
+        onOpenCommandPalette: openCommandPalette,
         embedded: true,
         selectedConversation: selectedConversation,
         onOpenDeepLinkTarget: openDeepLinkTarget,
@@ -742,17 +765,23 @@ class ConversationScreen extends StatefulWidget {
   const ConversationScreen({
     super.key,
     required this.state,
+    required this.navigatorKey,
+    required this.scaffoldMessengerKey,
     this.embedded = false,
     this.selectedConversation,
     this.onConversationSelected,
     this.onOpenDeepLinkTarget,
+    this.onOpenCommandPalette,
   });
 
   final CsacAppState state;
+  final GlobalKey<NavigatorState> navigatorKey;
+  final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey;
   final bool embedded;
   final Conversation? selectedConversation;
   final ValueChanged<Conversation>? onConversationSelected;
   final Future<bool> Function(CsacDeepLinkTarget target)? onOpenDeepLinkTarget;
+  final CommandPaletteOpener? onOpenCommandPalette;
 
   @override
   State<ConversationScreen> createState() => _ConversationScreenState();
@@ -1185,7 +1214,10 @@ class _ConversationScreenState extends State<ConversationScreen> {
     final strings = context.strings;
     final query = search.text.trim().toLowerCase();
     final conversations = visibleConversations(query);
-    final drawerEnabled = isMobilePlatform;
+    final screenSize = MediaQuery.sizeOf(context);
+    final isTabletMobile = isMobilePlatform && screenSize.shortestSide >= 600;
+    final drawerEnabled = isMobilePlatform && !isTabletMobile;
+    final commandButtonEnabled = isMobilePlatform;
     final groupFilters = <_ConversationGroupFilter>[
       _ConversationGroupFilter.all,
       _ConversationGroupFilter.important,
@@ -1232,10 +1264,31 @@ class _ConversationScreenState extends State<ConversationScreen> {
                     avatar: const Icon(Icons.cloud_off_outlined, size: 18),
                     label: Text(strings.text('Offline')),
                   ),
-                if (drawerEnabled)
+                if (commandButtonEnabled)
                   IconButton(
                     tooltip: strings.text('Commands'),
-                    onPressed: () => scaffoldKey.currentState?.openDrawer(),
+                    onPressed: () {
+                      if (drawerEnabled) {
+                        scaffoldKey.currentState?.openDrawer();
+                        return;
+                      }
+                      final openPalette = widget.onOpenCommandPalette;
+                      if (openPalette != null) {
+                        unawaited(
+                          openPalette(onRefresh: refresh, onScanQr: scanQrCode),
+                        );
+                        return;
+                      }
+                      unawaited(
+                        _showCommandPalette(
+                          state: widget.state,
+                          navigatorKey: widget.navigatorKey,
+                          scaffoldMessengerKey: widget.scaffoldMessengerKey,
+                          onRefresh: refresh,
+                          onScanQr: scanQrCode,
+                        ),
+                      );
+                    },
                     icon: const Icon(Icons.terminal_rounded),
                   ),
                 PopupMenuButton<String>(

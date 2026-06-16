@@ -10,6 +10,7 @@ import 'api_protocol.dart';
 import 'l10n.dart';
 import 'local_cache.dart';
 import 'models.dart';
+import 'platform/desktop_window_chrome.dart';
 import 'platform/app_storage.dart';
 import 'preferences.dart';
 
@@ -567,11 +568,19 @@ class CsacAppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> updateShowAcopBlockGeneratedCodeOnMobile(bool enabled) async {
-    preferences = preferences.copyWith(
-      showAcopBlockGeneratedCodeOnMobile: enabled,
-    );
+  Future<void> updateShowAcopBlockGeneratedCode(bool enabled) async {
+    preferences = preferences.copyWith(showAcopBlockGeneratedCode: enabled);
     await preferences.save();
+    notifyListeners();
+  }
+
+  Future<void> updateForceDesktopMobileWidth(bool enabled) async {
+    if (preferences.forceDesktopMobileWidth == enabled) {
+      return;
+    }
+    preferences = preferences.copyWith(forceDesktopMobileWidth: enabled);
+    await preferences.save();
+    await applyDesktopWindowMobileWidth(enabled);
     notifyListeners();
   }
 

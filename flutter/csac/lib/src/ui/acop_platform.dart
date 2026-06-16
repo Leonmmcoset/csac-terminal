@@ -836,8 +836,7 @@ class _AcopPlatformShellState extends State<AcopPlatformShell> {
         savingServer: savingServer,
         onSaveServer: saveServer,
         onResetServer: serverUrl.clear,
-        onShowBlockCodeChanged:
-            widget.state.updateShowAcopBlockGeneratedCodeOnMobile,
+        onShowBlockCodeChanged: widget.state.updateShowAcopBlockGeneratedCode,
         onLogout: logout,
         onSwitchToChat: switchToChatMode,
       ),
@@ -1106,15 +1105,13 @@ class _AcopAccountPage extends StatelessWidget {
           child: _RoundedInkClip(
             child: SwitchListTile(
               secondary: const Icon(Icons.code_outlined),
-              title: Text(
-                strings.text('Show generated code in mobile block editor'),
-              ),
+              title: Text(strings.text('Show generated code in block editor')),
               subtitle: Text(
                 strings.text(
-                  'When off, the mobile block editor only shows blocks. Desktop still shows generated code.',
+                  'When off, the block editor hides the generated code preview on desktop and mobile.',
                 ),
               ),
-              value: state.preferences.showAcopBlockGeneratedCodeOnMobile,
+              value: state.preferences.showAcopBlockGeneratedCode,
               onChanged: (value) => unawaited(onShowBlockCodeChanged(value)),
             ),
           ),
@@ -1487,8 +1484,8 @@ class _AcopBotDetailScreenState extends State<AcopBotDetailScreen> {
     final draft = await Navigator.of(context).push<_AcopScriptDraft>(
       MaterialPageRoute<_AcopScriptDraft>(
         builder: (context) => _AcopScriptEditorScreen(
-          showGeneratedCodeOnMobile:
-              widget.state.preferences.showAcopBlockGeneratedCodeOnMobile,
+          showGeneratedCode:
+              widget.state.preferences.showAcopBlockGeneratedCode,
         ),
       ),
     );
@@ -1518,8 +1515,8 @@ class _AcopBotDetailScreenState extends State<AcopBotDetailScreen> {
       MaterialPageRoute<_AcopScriptDraft>(
         builder: (context) => _AcopScriptEditorScreen(
           script: loaded,
-          showGeneratedCodeOnMobile:
-              widget.state.preferences.showAcopBlockGeneratedCodeOnMobile,
+          showGeneratedCode:
+              widget.state.preferences.showAcopBlockGeneratedCode,
         ),
       ),
     );
@@ -2383,13 +2380,10 @@ class _AcopScriptDraft {
 }
 
 class _AcopScriptEditorScreen extends StatefulWidget {
-  const _AcopScriptEditorScreen({
-    this.script,
-    required this.showGeneratedCodeOnMobile,
-  });
+  const _AcopScriptEditorScreen({this.script, required this.showGeneratedCode});
 
   final AcopScript? script;
-  final bool showGeneratedCodeOnMobile;
+  final bool showGeneratedCode;
 
   @override
   State<_AcopScriptEditorScreen> createState() =>
@@ -2465,7 +2459,7 @@ class _AcopScriptEditorScreenState extends State<_AcopScriptEditorScreen> {
       MaterialPageRoute<_AcopBlockDraft>(
         builder: (context) => _AcopBlockEditorScreen(
           initialCode: content.text,
-          showGeneratedCodeOnMobile: widget.showGeneratedCodeOnMobile,
+          showGeneratedCode: widget.showGeneratedCode,
         ),
       ),
     );

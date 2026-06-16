@@ -91,7 +91,9 @@ Future<void> main() async {
   final initialPreferences = await CsacPreferences.load();
   await preloadCsacStrings(initialPreferences.language);
   configureInsecureHttpsOverrides();
-  await configureDesktopWindowChrome();
+  await configureDesktopWindowChrome(
+    forceMobileWidth: initialPreferences.forceDesktopMobileWidth,
+  );
   await configureWindowsTray();
   runApp(CsacMobileApp(initialPreferences: initialPreferences));
 }

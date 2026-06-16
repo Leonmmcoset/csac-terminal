@@ -642,7 +642,12 @@ class _CsacMobileAppState extends State<CsacMobileApp>
                           key: const ValueKey<String>('login'),
                           state: state,
                         )
-                      : MainShell(key: mainShellKey, state: state),
+                      : MainShell(
+                          key: mainShellKey,
+                          state: state,
+                          navigatorKey: navigatorKey,
+                          scaffoldMessengerKey: scaffoldMessengerKey,
+                        ),
                 ),
                 if (locked && state.user != null)
                   Positioned.fill(

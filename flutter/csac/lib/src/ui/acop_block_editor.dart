@@ -4,6 +4,13 @@ enum _AcopBlockCategory { event, control, message, data, platform, utility }
 
 enum _AcopBlockFieldKind { text, number, select, multiline }
 
+class _AcopVariableSuggestion {
+  const _AcopVariableSuggestion(this.labelKey, this.expression);
+
+  final String labelKey;
+  final String expression;
+}
+
 class _AcopBlockFieldTemplate {
   const _AcopBlockFieldTemplate({
     required this.key,
@@ -30,6 +37,7 @@ class _AcopBlockTemplate {
     required this.fields,
     required this.builder,
     this.descriptionKey = '',
+    this.permissions = const <String>[],
   });
 
   final String id;
@@ -40,6 +48,7 @@ class _AcopBlockTemplate {
   final IconData icon;
   final List<_AcopBlockFieldTemplate> fields;
   final String Function(Map<String, String> fields) builder;
+  final List<String> permissions;
 }
 
 class _AcopWorkspaceBlock {
@@ -52,6 +61,7 @@ class _AcopWorkspaceBlock {
   final String id;
   final _AcopBlockTemplate template;
   final Map<String, String> values;
+  bool collapsed = false;
 
   String buildCode() => template.builder(values);
 }
@@ -62,14 +72,21 @@ class _AcopBlockDraft {
   final String code;
 }
 
+class _AcopImportedBlock {
+  const _AcopImportedBlock(this.templateId, this.values);
+
+  final String templateId;
+  final Map<String, String> values;
+}
+
 class _AcopBlockEditorScreen extends StatefulWidget {
   const _AcopBlockEditorScreen({
     required this.initialCode,
-    required this.showGeneratedCodeOnMobile,
+    required this.showGeneratedCode,
   });
 
   final String initialCode;
-  final bool showGeneratedCodeOnMobile;
+  final bool showGeneratedCode;
 
   @override
   State<_AcopBlockEditorScreen> createState() => _AcopBlockEditorScreenState();
@@ -87,10 +104,7 @@ class _AcopBlockEditorScreenState extends State<_AcopBlockEditorScreen>
   @override
   void initState() {
     super.initState();
-    tabs = TabController(
-      length: widget.showGeneratedCodeOnMobile ? 2 : 1,
-      vsync: this,
-    );
+    tabs = TabController(length: widget.showGeneratedCode ? 2 : 1, vsync: this);
     _addStarterBlocks();
     initialGeneratedCode = generatedCode;
   }
@@ -117,6 +131,14 @@ class _AcopBlockEditorScreenState extends State<_AcopBlockEditorScreen>
 
   List<_AcopBlockTemplate> get templates => _acopBlockTemplates;
 
+  List<String> get requiredPermissions {
+    return workspace
+        .expand((block) => block.template.permissions)
+        .toSet()
+        .toList()
+      ..sort();
+  }
+
   void _addStarterBlocks() {
     final current = widget.initialCode.trim();
     if (current.isEmpty || current == _defaultAcopScriptTemplate.trim()) {
@@ -128,6 +150,28 @@ class _AcopBlockEditorScreenState extends State<_AcopBlockEditorScreen>
       _templateById('raw.code'),
       values: {'code': current},
       notify: false,
+    );
+  }
+
+  void importCurrentCode() {
+    final imported = _importAcopBlocks(generatedCode);
+    setState(() {
+      workspace
+        ..clear()
+        ..addAll(imported.map(_materializeImportedBlock));
+      codeCopied = false;
+    });
+  }
+
+  _AcopWorkspaceBlock _materializeImportedBlock(_AcopImportedBlock imported) {
+    final template = _templateById(imported.templateId);
+    return _AcopWorkspaceBlock(
+      id: 'block_${++blockSerial}',
+      template: template,
+      values: {
+        for (final field in template.fields)
+          field.key: imported.values[field.key] ?? field.defaultValue,
+      },
     );
   }
 
@@ -163,6 +207,12 @@ class _AcopBlockEditorScreenState extends State<_AcopBlockEditorScreen>
     addBlock(block.template, values: Map<String, String>.from(block.values));
   }
 
+  void toggleBlockCollapsed(_AcopWorkspaceBlock block) {
+    setState(() {
+      block.collapsed = !block.collapsed;
+    });
+  }
+
   void reorderBlocks(int oldIndex, int newIndex) {
     setState(() {
       if (newIndex > oldIndex) {
@@ -179,6 +229,16 @@ class _AcopBlockEditorScreenState extends State<_AcopBlockEditorScreen>
       block.values[key] = value;
       codeCopied = false;
     });
+  }
+
+  void insertVariable(
+    _AcopWorkspaceBlock block,
+    String key,
+    String expression,
+  ) {
+    final current = block.values[key] ?? '';
+    final separator = current.isEmpty || current.endsWith(' ') ? '' : ' ';
+    updateField(block, key, '$current$separator$expression');
   }
 
   Future<void> copyCode() async {
@@ -228,8 +288,21 @@ class _AcopBlockEditorScreenState extends State<_AcopBlockEditorScreen>
   Widget build(BuildContext context) {
     final strings = context.strings;
     final isWide = MediaQuery.sizeOf(context).width >= 920;
-    final showGeneratedCodeOnMobile = widget.showGeneratedCodeOnMobile;
+    final showGeneratedCode = widget.showGeneratedCode;
     final currentTabs = tabs!;
+    final workspacePanel = _AcopWorkspacePanel(
+      workspace: workspace,
+      onReorder: reorderBlocks,
+      onUpdateField: updateField,
+      onInsertVariable: insertVariable,
+      onDuplicate: duplicateBlock,
+      onRemove: removeBlock,
+      onToggleCollapsed: toggleBlockCollapsed,
+    );
+    final codePanel = _AcopGeneratedCodePanel(
+      code: generatedCode,
+      permissions: requiredPermissions,
+    );
     return PopScope<_AcopBlockDraft>(
       canPop: allowPop || !hasUnsavedChanges,
       onPopInvokedWithResult: (didPop, result) {
@@ -238,11 +311,37 @@ class _AcopBlockEditorScreenState extends State<_AcopBlockEditorScreen>
         }
       },
       child: Scaffold(
+        drawerEdgeDragWidth: isWide ? 0 : 64,
+        drawer: isWide
+            ? null
+            : Drawer(
+                width: math.min(MediaQuery.sizeOf(context).width * 0.86, 360),
+                child: SafeArea(
+                  child: _AcopBlockToolSidebar(
+                    templates: templates,
+                    codeCopied: codeCopied,
+                    onOpenGuide: () => openAcopScriptGuide(context),
+                    onCopyCode: copyCode,
+                    onImportCode: importCurrentCode,
+                    onApplyCode: applyCode,
+                    onAddBlock: addBlock,
+                  ),
+                ),
+              ),
         appBar: AppBar(
+          leading: isWide
+              ? null
+              : Builder(
+                  builder: (context) => IconButton(
+                    tooltip: strings.text('Block tools'),
+                    onPressed: () => Scaffold.of(context).openDrawer(),
+                    icon: const Icon(Icons.menu_open),
+                  ),
+                ),
           title: Text(strings.text('JavaScript block editor')),
           bottom: isWide
               ? null
-              : showGeneratedCodeOnMobile
+              : showGeneratedCode
               ? TabBar(
                   controller: currentTabs,
                   tabs: [
@@ -258,22 +357,35 @@ class _AcopBlockEditorScreenState extends State<_AcopBlockEditorScreen>
                 )
               : null,
           actions: [
-            IconButton(
-              tooltip: strings.text('JavaScript guide'),
-              onPressed: () => openAcopScriptGuide(context),
-              icon: const Icon(Icons.help_outline),
-            ),
-            IconButton(
-              tooltip: strings.text('Copy generated code'),
-              onPressed: copyCode,
-              icon: Icon(codeCopied ? Icons.check : Icons.copy),
-            ),
-            TextButton.icon(
-              onPressed: applyCode,
-              icon: const Icon(Icons.output_outlined),
-              label: Text(strings.text('Apply code')),
-            ),
-            const SizedBox(width: 8),
+            if (isWide) ...[
+              IconButton(
+                tooltip: strings.text('JavaScript guide'),
+                onPressed: () => openAcopScriptGuide(context),
+                icon: const Icon(Icons.help_outline),
+              ),
+              IconButton(
+                tooltip: strings.text('Copy generated code'),
+                onPressed: copyCode,
+                icon: Icon(codeCopied ? Icons.check : Icons.copy),
+              ),
+              IconButton(
+                tooltip: strings.text('Import code as blocks'),
+                onPressed: importCurrentCode,
+                icon: const Icon(Icons.input),
+              ),
+              TextButton.icon(
+                onPressed: applyCode,
+                icon: const Icon(Icons.output_outlined),
+                label: Text(strings.text('Apply code')),
+              ),
+              const SizedBox(width: 8),
+            ] else ...[
+              IconButton(
+                tooltip: strings.text('Apply code'),
+                onPressed: applyCode,
+                icon: const Icon(Icons.output_outlined),
+              ),
+            ],
           ],
         ),
         body: SafeArea(
@@ -288,73 +400,18 @@ class _AcopBlockEditorScreenState extends State<_AcopBlockEditorScreen>
                       ),
                     ),
                     const VerticalDivider(width: 1),
-                    Expanded(
-                      flex: 3,
-                      child: _AcopWorkspacePanel(
-                        workspace: workspace,
-                        onReorder: reorderBlocks,
-                        onUpdateField: updateField,
-                        onDuplicate: duplicateBlock,
-                        onRemove: removeBlock,
-                      ),
-                    ),
-                    const VerticalDivider(width: 1),
-                    Expanded(
-                      flex: 2,
-                      child: _AcopGeneratedCodePanel(code: generatedCode),
-                    ),
+                    Expanded(flex: 3, child: workspacePanel),
+                    if (showGeneratedCode) ...[
+                      const VerticalDivider(width: 1),
+                      Expanded(flex: 2, child: codePanel),
+                    ],
                   ],
                 )
               : TabBarView(
                   controller: currentTabs,
-                  children: showGeneratedCodeOnMobile
-                      ? [
-                          Column(
-                            children: [
-                              Expanded(
-                                child: _AcopWorkspacePanel(
-                                  workspace: workspace,
-                                  onReorder: reorderBlocks,
-                                  onUpdateField: updateField,
-                                  onDuplicate: duplicateBlock,
-                                  onRemove: removeBlock,
-                                ),
-                              ),
-                              const Divider(height: 1),
-                              SizedBox(
-                                height: 280,
-                                child: _AcopBlockPalette(
-                                  templates: templates,
-                                  onAdd: addBlock,
-                                ),
-                              ),
-                            ],
-                          ),
-                          _AcopGeneratedCodePanel(code: generatedCode),
-                        ]
-                      : [
-                          Column(
-                            children: [
-                              Expanded(
-                                child: _AcopWorkspacePanel(
-                                  workspace: workspace,
-                                  onReorder: reorderBlocks,
-                                  onUpdateField: updateField,
-                                  onDuplicate: duplicateBlock,
-                                  onRemove: removeBlock,
-                                ),
-                              ),
-                              const Divider(height: 1),
-                              SizedBox(
-                                height: 280,
-                                child: _AcopBlockPalette(
-                                  templates: templates,
-                                  onAdd: addBlock,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
+                  children: showGeneratedCode
+                      ? [workspacePanel, codePanel]
+                      : [workspacePanel],
                 ),
         ),
       ),
@@ -411,6 +468,89 @@ class _AcopBlockPalette extends StatelessWidget {
               ),
             ),
         ],
+      ],
+    );
+  }
+}
+
+class _AcopBlockToolSidebar extends StatelessWidget {
+  const _AcopBlockToolSidebar({
+    required this.templates,
+    required this.codeCopied,
+    required this.onOpenGuide,
+    required this.onCopyCode,
+    required this.onImportCode,
+    required this.onApplyCode,
+    required this.onAddBlock,
+  });
+
+  final List<_AcopBlockTemplate> templates;
+  final bool codeCopied;
+  final VoidCallback onOpenGuide;
+  final Future<void> Function() onCopyCode;
+  final VoidCallback onImportCode;
+  final VoidCallback onApplyCode;
+  final void Function(_AcopBlockTemplate template) onAddBlock;
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  strings.text('Block tools'),
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: strings.text('Close'),
+                onPressed: () => Scaffold.of(context).closeDrawer(),
+                icon: const Icon(Icons.close),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              FilledButton.tonalIcon(
+                onPressed: onOpenGuide,
+                icon: const Icon(Icons.help_outline),
+                label: Text(strings.text('JavaScript guide')),
+              ),
+              FilledButton.tonalIcon(
+                onPressed: () => unawaited(onCopyCode()),
+                icon: Icon(codeCopied ? Icons.check : Icons.copy),
+                label: Text(strings.text('Copy code')),
+              ),
+              FilledButton.tonalIcon(
+                onPressed: onImportCode,
+                icon: const Icon(Icons.input),
+                label: Text(strings.text('Import')),
+              ),
+              FilledButton.icon(
+                onPressed: onApplyCode,
+                icon: const Icon(Icons.output_outlined),
+                label: Text(strings.text('Apply code')),
+              ),
+            ],
+          ),
+        ),
+        const Divider(height: 1),
+        Expanded(
+          child: _AcopBlockPalette(templates: templates, onAdd: onAddBlock),
+        ),
       ],
     );
   }
@@ -481,16 +621,21 @@ class _AcopWorkspacePanel extends StatelessWidget {
     required this.workspace,
     required this.onReorder,
     required this.onUpdateField,
+    required this.onInsertVariable,
     required this.onDuplicate,
     required this.onRemove,
+    required this.onToggleCollapsed,
   });
 
   final List<_AcopWorkspaceBlock> workspace;
   final void Function(int oldIndex, int newIndex) onReorder;
   final void Function(_AcopWorkspaceBlock block, String key, String value)
   onUpdateField;
+  final void Function(_AcopWorkspaceBlock block, String key, String expression)
+  onInsertVariable;
   final void Function(_AcopWorkspaceBlock block) onDuplicate;
   final void Function(_AcopWorkspaceBlock block) onRemove;
+  final void Function(_AcopWorkspaceBlock block) onToggleCollapsed;
 
   @override
   Widget build(BuildContext context) {
@@ -520,8 +665,10 @@ class _AcopWorkspacePanel extends StatelessWidget {
             index: index,
             block: block,
             onUpdateField: onUpdateField,
+            onInsertVariable: onInsertVariable,
             onDuplicate: () => onDuplicate(block),
             onRemove: () => onRemove(block),
+            onToggleCollapsed: () => onToggleCollapsed(block),
           ),
         );
       },
@@ -534,16 +681,21 @@ class _AcopWorkspaceBlockCard extends StatelessWidget {
     required this.index,
     required this.block,
     required this.onUpdateField,
+    required this.onInsertVariable,
     required this.onDuplicate,
     required this.onRemove,
+    required this.onToggleCollapsed,
   });
 
   final int index;
   final _AcopWorkspaceBlock block;
   final void Function(_AcopWorkspaceBlock block, String key, String value)
   onUpdateField;
+  final void Function(_AcopWorkspaceBlock block, String key, String expression)
+  onInsertVariable;
   final VoidCallback onDuplicate;
   final VoidCallback onRemove;
+  final VoidCallback onToggleCollapsed;
 
   @override
   Widget build(BuildContext context) {
@@ -586,6 +738,17 @@ class _AcopWorkspaceBlockCard extends StatelessWidget {
                       ),
                     ),
                   ),
+                  IconButton(
+                    tooltip: context.strings.text(
+                      block.collapsed ? 'Expand' : 'Collapse',
+                    ),
+                    onPressed: onToggleCollapsed,
+                    icon: Icon(
+                      block.collapsed
+                          ? Icons.keyboard_arrow_down
+                          : Icons.keyboard_arrow_up,
+                    ),
+                  ),
                   ReorderableDragStartListener(
                     index: index,
                     child: IconButton(
@@ -621,23 +784,26 @@ class _AcopWorkspaceBlockCard extends StatelessWidget {
               ),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              children: [
-                for (final field in block.template.fields) ...[
-                  _AcopBlockFieldEditor(
-                    field: field,
-                    value: block.values[field.key] ?? field.defaultValue,
-                    onChanged: (value) =>
-                        onUpdateField(block, field.key, value),
-                  ),
-                  if (field != block.template.fields.last)
-                    const SizedBox(height: 10),
+          if (!block.collapsed)
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                children: [
+                  for (final field in block.template.fields) ...[
+                    _AcopBlockFieldEditor(
+                      field: field,
+                      value: block.values[field.key] ?? field.defaultValue,
+                      onChanged: (value) =>
+                          onUpdateField(block, field.key, value),
+                      onInsertVariable: (expression) =>
+                          onInsertVariable(block, field.key, expression),
+                    ),
+                    if (field != block.template.fields.last)
+                      const SizedBox(height: 10),
+                  ],
                 ],
-              ],
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -649,11 +815,33 @@ class _AcopBlockFieldEditor extends StatelessWidget {
     required this.field,
     required this.value,
     required this.onChanged,
+    required this.onInsertVariable,
   });
 
   final _AcopBlockFieldTemplate field;
   final String value;
   final ValueChanged<String> onChanged;
+  final ValueChanged<String> onInsertVariable;
+
+  Widget? _variableSuffix(BuildContext context) {
+    if (field.kind == _AcopBlockFieldKind.select) {
+      return null;
+    }
+    return PopupMenuButton<String>(
+      tooltip: context.strings.text('Insert variable'),
+      icon: const Icon(Icons.data_object),
+      onSelected: onInsertVariable,
+      itemBuilder: (context) => [
+        for (final item in _acopVariableSuggestions)
+          PopupMenuItem(
+            value: item.expression,
+            child: Text(
+              '${context.strings.text(item.labelKey)}  ${item.expression}',
+            ),
+          ),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -667,6 +855,7 @@ class _AcopBlockFieldEditor extends StatelessWidget {
           decoration: InputDecoration(
             labelText: strings.text(field.labelKey),
             border: const OutlineInputBorder(),
+            suffixIcon: _variableSuffix(context),
           ),
           items: [
             for (final option in field.options)
@@ -702,6 +891,7 @@ class _AcopBlockFieldEditor extends StatelessWidget {
             labelText: strings.text(field.labelKey),
             alignLabelWithHint: true,
             border: const OutlineInputBorder(),
+            suffixIcon: _variableSuffix(context),
           ),
           onChanged: onChanged,
         );
@@ -711,6 +901,7 @@ class _AcopBlockFieldEditor extends StatelessWidget {
           decoration: InputDecoration(
             labelText: strings.text(field.labelKey),
             border: const OutlineInputBorder(),
+            suffixIcon: _variableSuffix(context),
           ),
           onChanged: onChanged,
         );
@@ -719,44 +910,120 @@ class _AcopBlockFieldEditor extends StatelessWidget {
 }
 
 class _AcopGeneratedCodePanel extends StatelessWidget {
-  const _AcopGeneratedCodePanel({required this.code});
+  const _AcopGeneratedCodePanel({
+    required this.code,
+    required this.permissions,
+  });
 
   final String code;
+  final List<String> permissions;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.all(16),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHighest.withValues(
-            alpha: 0.45,
-          ),
-          border: Border.all(color: theme.colorScheme.outlineVariant),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(14),
-            child: SelectableText(
-              code,
-              style: theme.textTheme.bodySmall?.copyWith(
-                fontFamily: 'Consolas',
-                fontFamilyFallback: const [
-                  'SF Mono',
-                  'Menlo',
-                  'Monaco',
-                  'Liberation Mono',
-                  'DejaVu Sans Mono',
-                  'Noto Sans Mono',
-                  'monospace',
-                ],
-                height: 1.45,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _AcopPermissionSummary(permissions: permissions),
+          const SizedBox(height: 12),
+          Expanded(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHighest.withValues(
+                  alpha: 0.45,
+                ),
+                border: Border.all(color: theme.colorScheme.outlineVariant),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(14),
+                  child: SelectableText(
+                    code,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontFamily: 'Consolas',
+                      fontFamilyFallback: const [
+                        'SF Mono',
+                        'Menlo',
+                        'Monaco',
+                        'Liberation Mono',
+                        'DejaVu Sans Mono',
+                        'Noto Sans Mono',
+                        'monospace',
+                      ],
+                      height: 1.45,
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AcopPermissionSummary extends StatelessWidget {
+  const _AcopPermissionSummary({required this.permissions});
+
+  final List<String> permissions;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final label = permissions.isEmpty
+        ? context.strings.text('No extra permissions')
+        : permissions.join(', ');
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.verified_user_outlined,
+                  size: 18,
+                  color: theme.colorScheme.primary,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  context.strings.text('Required permissions'),
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            permissions.isEmpty
+                ? Text(
+                    label,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  )
+                : Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final permission in permissions)
+                        Chip(
+                          visualDensity: VisualDensity.compact,
+                          label: Text(permission),
+                        ),
+                    ],
+                  ),
+          ],
         ),
       ),
     );
@@ -816,6 +1083,97 @@ _AcopBlockTemplate _templateById(String id) {
   return _acopBlockTemplates.firstWhere((template) => template.id == id);
 }
 
+List<_AcopImportedBlock> _importAcopBlocks(String code) {
+  final source = code.trim();
+  if (source.isEmpty || source == _defaultAcopScriptTemplate.trim()) {
+    return const [
+      _AcopImportedBlock('command.reply', {}),
+      _AcopImportedBlock('group.keyword.reply', {}),
+    ];
+  }
+
+  final blocks = <_AcopImportedBlock>[];
+  final commandPattern = RegExp(
+    r'''bot\.command\((['"])(.*?)\1(?:,\s*\{\s*scope:\s*(['"])(.*?)\3\s*\})?,\s*async\s*\(ctx\)\s*=>\s*\{\s*await\s+ctx\.reply\((['"])(.*?)\5\)\s*\}\)''',
+    dotAll: true,
+  );
+  for (final match in commandPattern.allMatches(source)) {
+    blocks.add(
+      _AcopImportedBlock('command.reply', {
+        'command': match.group(2) ?? '/ping',
+        'scope': match.group(4) ?? 'all',
+        'reply': match.group(6) ?? 'pong',
+      }),
+    );
+  }
+
+  final groupKeywordPattern = RegExp(
+    r'''bot\.on\('group\.message',\s*async\s*\(ctx\)\s*=>\s*\{\s*if\s*\(ctx\.text\.includes\((['"])(.*?)\1\)\)\s*\{\s*await\s+ctx\.reply\((.*?)\)\s*\}\s*\}\)''',
+    dotAll: true,
+  );
+  for (final match in groupKeywordPattern.allMatches(source)) {
+    blocks.add(
+      _AcopImportedBlock('group.keyword.reply', {
+        'keyword': match.group(2) ?? '',
+        'replyExpression': (match.group(3) ?? '').trim(),
+      }),
+    );
+  }
+
+  final privateKeywordPattern = RegExp(
+    r'''bot\.on\('private\.message',\s*async\s*\(ctx\)\s*=>\s*\{\s*if\s*\(ctx\.text\.trim\(\)\s*===\s*(['"])(.*?)\1\)\s*\{\s*await\s+ctx\.reply\((['"])(.*?)\3\)\s*\}\s*\}\)''',
+    dotAll: true,
+  );
+  for (final match in privateKeywordPattern.allMatches(source)) {
+    blocks.add(
+      _AcopImportedBlock('private.message.reply', {
+        'keyword': match.group(2) ?? '',
+        'reply': match.group(4) ?? '',
+      }),
+    );
+  }
+
+  final constPattern = RegExp(
+    r'const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(.+?)(?:\n|$)',
+  );
+  for (final match in constPattern.allMatches(source)) {
+    final expression = (match.group(2) ?? '').trim();
+    if (expression.startsWith('await ')) {
+      continue;
+    }
+    blocks.add(
+      _AcopImportedBlock('constant', {
+        'name': match.group(1) ?? 'VALUE',
+        'value': expression,
+      }),
+    );
+  }
+
+  if (source.contains('ctx.requireGroupAdmin()')) {
+    blocks.add(const _AcopImportedBlock('require.group.admin', {}));
+  }
+
+  final logPattern = RegExp(
+    r'''logger\.(info|warn|error)\((['"])(.*?)\2\)''',
+    dotAll: true,
+  );
+  for (final match in logPattern.allMatches(source)) {
+    blocks.add(
+      _AcopImportedBlock('logger', {
+        'level': match.group(1) ?? 'info',
+        'message': match.group(3) ?? '',
+      }),
+    );
+  }
+
+  if (blocks.isEmpty) {
+    return [
+      _AcopImportedBlock('raw.code', {'code': source}),
+    ];
+  }
+  return blocks;
+}
+
 String _f(Map<String, String> fields, String key) => fields[key] ?? '';
 
 String _jsString(String value) {
@@ -851,6 +1209,15 @@ String _indentJs(String code, [String indent = '  ']) {
       .map((line) => line.trim().isEmpty ? '' : '$indent$line')
       .join('\n');
 }
+
+const _acopVariableSuggestions = <_AcopVariableSuggestion>[
+  _AcopVariableSuggestion('Message text variable', 'ctx.text'),
+  _AcopVariableSuggestion('Sender UID variable', 'ctx.sender.uid'),
+  _AcopVariableSuggestion('Sender nickname variable', 'ctx.sender.nickname'),
+  _AcopVariableSuggestion('Group ID variable', 'ctx.group.id'),
+  _AcopVariableSuggestion('Matched regex group variable', 'match[1]'),
+  _AcopVariableSuggestion('Current time variable', 'Date.now()'),
+];
 
 final _acopEventColor = Colors.indigo.shade600;
 final _acopControlColor = Colors.deepOrange.shade600;
@@ -1005,6 +1372,7 @@ bot.on('group.message', async (ctx) => {
     category: _AcopBlockCategory.event,
     color: _acopEventColor,
     icon: Icons.person_add_alt_1_outlined,
+    permissions: const ['group', 'user'],
     fields: const [
       _AcopBlockFieldTemplate(
         key: 'messageExpression',
@@ -1082,6 +1450,317 @@ ${_indentJs(_f(fields, 'body'))}
 if (ctx.text.includes(${_jsString(_f(fields, 'keyword'))})) {
 ${_indentJs(_f(fields, 'body'))}
 }''';
+    },
+  ),
+  _AcopBlockTemplate(
+    id: 'if.expression',
+    titleKey: 'If expression',
+    descriptionKey: 'Generic if block with a JavaScript condition.',
+    category: _AcopBlockCategory.control,
+    color: _acopControlColor,
+    icon: Icons.segment,
+    fields: const [
+      _AcopBlockFieldTemplate(
+        key: 'condition',
+        labelKey: 'Condition expression',
+        kind: _AcopBlockFieldKind.text,
+        defaultValue: 'ctx.text.length > 0',
+      ),
+      _AcopBlockFieldTemplate(
+        key: 'body',
+        labelKey: 'JavaScript body',
+        kind: _AcopBlockFieldKind.multiline,
+        defaultValue: "await ctx.reply('ok')",
+      ),
+    ],
+    builder: (fields) {
+      return '''
+if (${_jsExpression(_f(fields, 'condition'), 'true')}) {
+${_indentJs(_f(fields, 'body'))}
+}''';
+    },
+  ),
+  _AcopBlockTemplate(
+    id: 'else.if',
+    titleKey: 'If / else',
+    descriptionKey: 'Adds an else branch.',
+    category: _AcopBlockCategory.control,
+    color: _acopControlColor,
+    icon: Icons.alt_route,
+    fields: const [
+      _AcopBlockFieldTemplate(
+        key: 'condition',
+        labelKey: 'Condition expression',
+        kind: _AcopBlockFieldKind.text,
+        defaultValue: 'ctx.text.includes("help")',
+      ),
+      _AcopBlockFieldTemplate(
+        key: 'ifBody',
+        labelKey: 'If body',
+        kind: _AcopBlockFieldKind.multiline,
+        defaultValue: "await ctx.reply('help')",
+      ),
+      _AcopBlockFieldTemplate(
+        key: 'elseBody',
+        labelKey: 'Else body',
+        kind: _AcopBlockFieldKind.multiline,
+        defaultValue: "await ctx.reply('no match')",
+      ),
+    ],
+    builder: (fields) {
+      return '''
+if (${_jsExpression(_f(fields, 'condition'), 'true')}) {
+${_indentJs(_f(fields, 'ifBody'))}
+} else {
+${_indentJs(_f(fields, 'elseBody'))}
+}''';
+    },
+  ),
+  _AcopBlockTemplate(
+    id: 'loop.for',
+    titleKey: 'For loop',
+    descriptionKey: 'Classic counted loop.',
+    category: _AcopBlockCategory.control,
+    color: _acopControlColor,
+    icon: Icons.loop,
+    fields: const [
+      _AcopBlockFieldTemplate(
+        key: 'index',
+        labelKey: 'Index variable',
+        kind: _AcopBlockFieldKind.text,
+        defaultValue: 'i',
+      ),
+      _AcopBlockFieldTemplate(
+        key: 'start',
+        labelKey: 'Start',
+        kind: _AcopBlockFieldKind.number,
+        defaultValue: '0',
+      ),
+      _AcopBlockFieldTemplate(
+        key: 'end',
+        labelKey: 'End',
+        kind: _AcopBlockFieldKind.number,
+        defaultValue: '10',
+      ),
+      _AcopBlockFieldTemplate(
+        key: 'step',
+        labelKey: 'Step',
+        kind: _AcopBlockFieldKind.number,
+        defaultValue: '1',
+      ),
+      _AcopBlockFieldTemplate(
+        key: 'body',
+        labelKey: 'JavaScript body',
+        kind: _AcopBlockFieldKind.multiline,
+        defaultValue: "logger.info(String(i))",
+      ),
+    ],
+    builder: (fields) {
+      final index = _jsIdentifier(_f(fields, 'index'), 'i');
+      return '''
+for (let $index = ${_jsNumber(_f(fields, 'start'), '0')}; $index < ${_jsNumber(_f(fields, 'end'), '10')}; $index += ${_jsNumber(_f(fields, 'step'), '1')}) {
+${_indentJs(_f(fields, 'body'))}
+}''';
+    },
+  ),
+  _AcopBlockTemplate(
+    id: 'loop.for.of',
+    titleKey: 'For each item',
+    descriptionKey: 'Iterates an array or list.',
+    category: _AcopBlockCategory.control,
+    color: _acopControlColor,
+    icon: Icons.view_list_outlined,
+    fields: const [
+      _AcopBlockFieldTemplate(
+        key: 'item',
+        labelKey: 'Item variable',
+        kind: _AcopBlockFieldKind.text,
+        defaultValue: 'item',
+      ),
+      _AcopBlockFieldTemplate(
+        key: 'items',
+        labelKey: 'Items expression',
+        kind: _AcopBlockFieldKind.text,
+        defaultValue: '[1, 2, 3]',
+      ),
+      _AcopBlockFieldTemplate(
+        key: 'body',
+        labelKey: 'JavaScript body',
+        kind: _AcopBlockFieldKind.multiline,
+        defaultValue: "logger.info(String(item))",
+      ),
+    ],
+    builder: (fields) {
+      final item = _jsIdentifier(_f(fields, 'item'), 'item');
+      return '''
+for (const $item of ${_jsExpression(_f(fields, 'items'), '[]')}) {
+${_indentJs(_f(fields, 'body'))}
+}''';
+    },
+  ),
+  _AcopBlockTemplate(
+    id: 'loop.while',
+    titleKey: 'While loop',
+    descriptionKey: 'Repeats while a condition is true.',
+    category: _AcopBlockCategory.control,
+    color: _acopControlColor,
+    icon: Icons.restart_alt,
+    fields: const [
+      _AcopBlockFieldTemplate(
+        key: 'condition',
+        labelKey: 'Condition expression',
+        kind: _AcopBlockFieldKind.text,
+        defaultValue: 'true',
+      ),
+      _AcopBlockFieldTemplate(
+        key: 'body',
+        labelKey: 'JavaScript body',
+        kind: _AcopBlockFieldKind.multiline,
+        defaultValue: "break",
+      ),
+    ],
+    builder: (fields) {
+      return '''
+while (${_jsExpression(_f(fields, 'condition'), 'true')}) {
+${_indentJs(_f(fields, 'body'))}
+}''';
+    },
+  ),
+  _AcopBlockTemplate(
+    id: 'loop.repeat',
+    titleKey: 'Repeat N times',
+    descriptionKey: 'Scratch-like repeat loop.',
+    category: _AcopBlockCategory.control,
+    color: _acopControlColor,
+    icon: Icons.repeat,
+    fields: const [
+      _AcopBlockFieldTemplate(
+        key: 'times',
+        labelKey: 'Times',
+        kind: _AcopBlockFieldKind.number,
+        defaultValue: '3',
+      ),
+      _AcopBlockFieldTemplate(
+        key: 'body',
+        labelKey: 'JavaScript body',
+        kind: _AcopBlockFieldKind.multiline,
+        defaultValue: "await ctx.reply('repeat')",
+      ),
+    ],
+    builder: (fields) {
+      return '''
+for (let i = 0; i < ${_jsNumber(_f(fields, 'times'), '3')}; i += 1) {
+${_indentJs(_f(fields, 'body'))}
+}''';
+    },
+  ),
+  _AcopBlockTemplate(
+    id: 'try.catch',
+    titleKey: 'Try / catch',
+    descriptionKey: 'Wraps code with error handling.',
+    category: _AcopBlockCategory.control,
+    color: _acopControlColor,
+    icon: Icons.warning_amber_outlined,
+    fields: const [
+      _AcopBlockFieldTemplate(
+        key: 'tryBody',
+        labelKey: 'Try body',
+        kind: _AcopBlockFieldKind.multiline,
+        defaultValue: "await ctx.reply('ok')",
+      ),
+      _AcopBlockFieldTemplate(
+        key: 'catchBody',
+        labelKey: 'Catch body',
+        kind: _AcopBlockFieldKind.multiline,
+        defaultValue: "logger.error(error)",
+      ),
+    ],
+    builder: (fields) {
+      return '''
+try {
+${_indentJs(_f(fields, 'tryBody'))}
+} catch (error) {
+${_indentJs(_f(fields, 'catchBody'))}
+}''';
+    },
+  ),
+  _AcopBlockTemplate(
+    id: 'return.statement',
+    titleKey: 'Return',
+    descriptionKey: 'Ends the current function or handler.',
+    category: _AcopBlockCategory.control,
+    color: _acopControlColor,
+    icon: Icons.keyboard_return,
+    fields: const [
+      _AcopBlockFieldTemplate(
+        key: 'expression',
+        labelKey: 'Return expression',
+        kind: _AcopBlockFieldKind.text,
+        defaultValue: '',
+      ),
+    ],
+    builder: (fields) {
+      final expression = _f(fields, 'expression').trim();
+      return expression.isEmpty
+          ? 'return'
+          : 'return ${_jsExpression(expression, 'null')}';
+    },
+  ),
+  _AcopBlockTemplate(
+    id: 'function.declare',
+    titleKey: 'Function',
+    descriptionKey: 'Declares a reusable JavaScript function.',
+    category: _AcopBlockCategory.utility,
+    color: _acopUtilityColor,
+    icon: Icons.functions,
+    fields: const [
+      _AcopBlockFieldTemplate(
+        key: 'name',
+        labelKey: 'Function name',
+        kind: _AcopBlockFieldKind.text,
+        defaultValue: 'handler',
+      ),
+      _AcopBlockFieldTemplate(
+        key: 'params',
+        labelKey: 'Parameters',
+        kind: _AcopBlockFieldKind.text,
+        defaultValue: 'ctx',
+      ),
+      _AcopBlockFieldTemplate(
+        key: 'body',
+        labelKey: 'JavaScript body',
+        kind: _AcopBlockFieldKind.multiline,
+        defaultValue: "return true",
+      ),
+    ],
+    builder: (fields) {
+      final name = _jsIdentifier(_f(fields, 'name'), 'handler');
+      final params = _f(fields, 'params').trim().isEmpty
+          ? 'ctx'
+          : _f(fields, 'params').trim();
+      return '''
+function $name($params) {
+${_indentJs(_f(fields, 'body'))}
+}''';
+    },
+  ),
+  _AcopBlockTemplate(
+    id: 'delay',
+    titleKey: 'Delay',
+    descriptionKey: 'Waits for a number of milliseconds.',
+    category: _AcopBlockCategory.utility,
+    color: _acopUtilityColor,
+    icon: Icons.schedule_send,
+    fields: const [
+      _AcopBlockFieldTemplate(
+        key: 'ms',
+        labelKey: 'Milliseconds',
+        kind: _AcopBlockFieldKind.number,
+        defaultValue: '1000',
+      ),
+    ],
+    builder: (fields) {
+      return 'await new Promise((resolve) => setTimeout(resolve, ${_jsNumber(_f(fields, 'ms'), '1000')}))';
     },
   ),
   _AcopBlockTemplate(
@@ -1186,6 +1865,7 @@ ${_indentJs(_f(fields, 'body'))}
     category: _AcopBlockCategory.message,
     color: _acopMessageColor,
     icon: Icons.notifications_active_outlined,
+    permissions: const ['notify'],
     fields: const [
       _AcopBlockFieldTemplate(
         key: 'title',
@@ -1211,6 +1891,7 @@ ${_indentJs(_f(fields, 'body'))}
     category: _AcopBlockCategory.data,
     color: _acopDataColor,
     icon: Icons.inventory_2_outlined,
+    permissions: const ['storage'],
     fields: const [
       _AcopBlockFieldTemplate(
         key: 'variable',
@@ -1242,6 +1923,7 @@ ${_indentJs(_f(fields, 'body'))}
     category: _AcopBlockCategory.data,
     color: _acopDataColor,
     icon: Icons.save_as_outlined,
+    permissions: const ['storage'],
     fields: const [
       _AcopBlockFieldTemplate(
         key: 'key',
@@ -1267,6 +1949,7 @@ ${_indentJs(_f(fields, 'body'))}
     category: _AcopBlockCategory.data,
     color: _acopDataColor,
     icon: Icons.exposure_plus_1,
+    permissions: const ['storage'],
     fields: const [
       _AcopBlockFieldTemplate(
         key: 'variable',
@@ -1298,6 +1981,7 @@ ${_indentJs(_f(fields, 'body'))}
     category: _AcopBlockCategory.platform,
     color: _acopPlatformColor,
     icon: Icons.http,
+    permissions: const ['http'],
     fields: const [
       _AcopBlockFieldTemplate(
         key: 'variable',
@@ -1323,6 +2007,7 @@ ${_indentJs(_f(fields, 'body'))}
     category: _AcopBlockCategory.platform,
     color: _acopPlatformColor,
     icon: Icons.account_circle_outlined,
+    permissions: const ['user'],
     fields: const [
       _AcopBlockFieldTemplate(
         key: 'variable',
@@ -1348,6 +2033,7 @@ ${_indentJs(_f(fields, 'body'))}
     category: _AcopBlockCategory.platform,
     color: _acopPlatformColor,
     icon: Icons.info_outline,
+    permissions: const ['group'],
     fields: const [
       _AcopBlockFieldTemplate(
         key: 'variable',
