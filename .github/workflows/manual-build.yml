@@ -386,14 +386,15 @@ jobs:
             -alias "$clean_key_alias" \
             >/dev/null
 
-      - name: Build Android APK
-        run: flutter build apk --release -v --build-name "$APP_BUILD_NAME" --build-number "$APP_BUILD_NUMBER"
+      - name: Build Android APKs
+        run: flutter build apk --release --split-per-abi -v --build-name "$APP_BUILD_NAME" --build-number "$APP_BUILD_NUMBER"
 
-      - name: Upload Android APK
+      - name: Upload Android APKs
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.APP_NAME }}-android
-          path: flutter/csac/build/app/outputs/flutter-apk/app-release.apk
+          path: flutter/csac/build/app/outputs/flutter-apk/app-*-release.apk
+          if-no-files-found: error
 
   ios:
     name: iOS unsigned IPA
@@ -560,10 +561,15 @@ jobs:
               "release-upload/${APP_NAME}-${version}-macos-universal.zip"
           fi
 
-          if [[ -f release-assets/${APP_NAME}-android/app-release.apk ]]; then
-            cp \
-              "release-assets/${APP_NAME}-android/app-release.apk" \
-              "release-upload/${APP_NAME}-${version}-android-release.apk"
+          shopt -s nullglob
+          android_apks=(release-assets/${APP_NAME}-android/app-*-release.apk)
+          if (( ${#android_apks[@]} > 0 )); then
+            for apk in "${android_apks[@]}"; do
+              apk_name="$(basename "$apk")"
+              abi="${apk_name#app-}"
+              abi="${abi%-release.apk}"
+              cp "$apk" "release-upload/${APP_NAME}-${version}-android-${abi}.apk"
+            done
           fi
 
           if [[ -f release-assets/${APP_NAME}-ios/${APP_NAME}-ios-unsigned.ipa ]]; then

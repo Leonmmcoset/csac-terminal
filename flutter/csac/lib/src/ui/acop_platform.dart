@@ -839,6 +839,7 @@ class _AcopPlatformShellState extends State<AcopPlatformShell> {
         onSaveServer: saveServer,
         onResetServer: serverUrl.clear,
         onShowBlockCodeChanged: widget.state.updateShowAcopBlockGeneratedCode,
+        onWrapCodeEditorChanged: widget.state.updateWrapAcopCodeEditorOnMobile,
         onLogout: logout,
         onSwitchToChat: switchToChatMode,
       ),
@@ -1076,6 +1077,7 @@ class _AcopAccountPage extends StatelessWidget {
     required this.onSaveServer,
     required this.onResetServer,
     required this.onShowBlockCodeChanged,
+    required this.onWrapCodeEditorChanged,
     required this.onLogout,
     required this.onSwitchToChat,
   });
@@ -1086,6 +1088,7 @@ class _AcopAccountPage extends StatelessWidget {
   final Future<void> Function() onSaveServer;
   final VoidCallback onResetServer;
   final Future<void> Function(bool enabled) onShowBlockCodeChanged;
+  final Future<void> Function(bool enabled) onWrapCodeEditorChanged;
   final Future<void> Function() onLogout;
   final Future<void> Function() onSwitchToChat;
 
@@ -1105,16 +1108,36 @@ class _AcopAccountPage extends StatelessWidget {
         Card(
           elevation: 0,
           child: _RoundedInkClip(
-            child: SwitchListTile(
-              secondary: const Icon(Icons.code_outlined),
-              title: Text(strings.text('Show generated code in block editor')),
-              subtitle: Text(
-                strings.text(
-                  'When off, the block editor hides the generated code preview on desktop and mobile.',
+            child: Column(
+              children: [
+                SwitchListTile(
+                  secondary: const Icon(Icons.code_outlined),
+                  title: Text(
+                    strings.text('Show generated code in block editor'),
+                  ),
+                  subtitle: Text(
+                    strings.text(
+                      'When off, the block editor hides the generated code preview on desktop and mobile.',
+                    ),
+                  ),
+                  value: state.preferences.showAcopBlockGeneratedCode,
+                  onChanged: (value) =>
+                      unawaited(onShowBlockCodeChanged(value)),
                 ),
-              ),
-              value: state.preferences.showAcopBlockGeneratedCode,
-              onChanged: (value) => unawaited(onShowBlockCodeChanged(value)),
+                const Divider(height: 1),
+                SwitchListTile(
+                  secondary: const Icon(Icons.wrap_text_outlined),
+                  title: Text(strings.text('Wrap long code lines on mobile')),
+                  subtitle: Text(
+                    strings.text(
+                      'When off, the mobile code editor scrolls horizontally instead of wrapping long lines.',
+                    ),
+                  ),
+                  value: state.preferences.wrapAcopCodeEditorOnMobile,
+                  onChanged: (value) =>
+                      unawaited(onWrapCodeEditorChanged(value)),
+                ),
+              ],
             ),
           ),
         ),
@@ -1488,6 +1511,7 @@ class _AcopBotDetailScreenState extends State<AcopBotDetailScreen> {
         builder: (context) => _AcopScriptEditorScreen(
           showGeneratedCode:
               widget.state.preferences.showAcopBlockGeneratedCode,
+          mobileWordWrap: widget.state.preferences.wrapAcopCodeEditorOnMobile,
         ),
       ),
     );
@@ -1519,6 +1543,7 @@ class _AcopBotDetailScreenState extends State<AcopBotDetailScreen> {
           script: loaded,
           showGeneratedCode:
               widget.state.preferences.showAcopBlockGeneratedCode,
+          mobileWordWrap: widget.state.preferences.wrapAcopCodeEditorOnMobile,
         ),
       ),
     );
@@ -2382,10 +2407,15 @@ class _AcopScriptDraft {
 }
 
 class _AcopScriptEditorScreen extends StatefulWidget {
-  const _AcopScriptEditorScreen({this.script, required this.showGeneratedCode});
+  const _AcopScriptEditorScreen({
+    this.script,
+    required this.showGeneratedCode,
+    required this.mobileWordWrap,
+  });
 
   final AcopScript? script;
   final bool showGeneratedCode;
+  final bool mobileWordWrap;
 
   @override
   State<_AcopScriptEditorScreen> createState() =>
@@ -2558,6 +2588,7 @@ class _AcopScriptEditorScreenState extends State<_AcopScriptEditorScreen> {
                     child: _AcopCodeEditor(
                       controller: content,
                       label: strings.text('Script content'),
+                      mobileWordWrap: widget.mobileWordWrap,
                     ),
                   ),
                 ),
@@ -2943,10 +2974,15 @@ class _AcopJsonResultDialog extends StatelessWidget {
 }
 
 class _AcopCodeEditor extends StatelessWidget {
-  const _AcopCodeEditor({required this.controller, required this.label});
+  const _AcopCodeEditor({
+    required this.controller,
+    required this.label,
+    required this.mobileWordWrap,
+  });
 
   final CodeLineEditingController controller;
   final String label;
+  final bool mobileWordWrap;
 
   @override
   Widget build(BuildContext context) {
@@ -2970,10 +3006,10 @@ class _AcopCodeEditor extends StatelessWidget {
               child: ExcludeSemantics(
                 child: CodeEditor(
                   controller: controller,
-                  wordWrap: true,
+                  wordWrap: isMobilePlatform ? mobileWordWrap : true,
                   autocompleteSymbols: true,
                   padding: const EdgeInsets.all(12),
-                  margin: const EdgeInsets.fromLTRB(8, 0, 0, 0),
+                  margin: const EdgeInsets.all(8),
                   sperator: VerticalDivider(
                     width: 13,
                     thickness: 1,
