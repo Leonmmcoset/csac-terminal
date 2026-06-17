@@ -699,6 +699,24 @@ Future<void> downloadUrl(
     final fileName = suggestedName.trim().isEmpty
         ? defaultDownloadName(url, fallbackExtension: fallbackExt)
         : suggestedName.trim();
+    if (isMobilePlatform) {
+      final path = await writeMobileDownloadFile(
+        fileName: fileName,
+        bytes: response.bodyBytes,
+      );
+      await SharePlus.instance.share(
+        ShareParams(files: [XFile(path)], fileNameOverrides: [fileName]),
+      );
+      if (!context.mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(strings.format('Saved to {path}', {'path': path})),
+        ),
+      );
+      return;
+    }
     final location = await getSaveLocation(
       suggestedName: fileName,
       acceptedTypeGroups: extensions.isEmpty

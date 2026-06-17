@@ -56,14 +56,15 @@ extension _ChatExport on _ChatScreenState {
       return;
     }
     var directory = '';
-    if (!isWebPlatform) {
+    if (!isWebPlatform && !isMobilePlatform) {
       final pickedDirectory = await getDirectoryPath(
         confirmButtonText: context.strings.text('Choose export folder'),
         canCreateDirectories: true,
       );
       directory = pickedDirectory ?? '';
     }
-    if (!mounted || (!isWebPlatform && directory.trim().isEmpty)) {
+    if (!mounted ||
+        (!isWebPlatform && !isMobilePlatform && directory.trim().isEmpty)) {
       return;
     }
     setExporting(true);
@@ -188,6 +189,9 @@ extension _ChatExport on _ChatScreenState {
     final baseName =
         'csac_${widget.conversation.type.name}_${widget.conversation.id}_'
         '${_exportTimestamp()}';
+    final exportDirectory = directory.trim().isEmpty
+        ? await createMobileChatExportDirectory(baseName)
+        : directory;
     final extension = switch (options.format) {
       ChatExportFormat.txt => 'txt',
       ChatExportFormat.html => 'html',
@@ -195,7 +199,7 @@ extension _ChatExport on _ChatScreenState {
     };
     final mediaRefs = <int, List<_ChatExportMediaRef>>{};
     if (options.includeMedia) {
-      final mediaDirectoryPath = p.join(directory, '${baseName}_media');
+      final mediaDirectoryPath = p.join(exportDirectory, '${baseName}_media');
       await ensureDirectoryExists(mediaDirectoryPath);
       for (final message in allMessages) {
         mediaRefs[message.id] = await downloadMessageMedia(
@@ -205,7 +209,7 @@ extension _ChatExport on _ChatScreenState {
       }
     }
     final result = await writeChatExportFile(
-      directory: directory,
+      directory: exportDirectory,
       baseName: baseName,
       extension: extension,
       content: switch (options.format) {
@@ -215,6 +219,14 @@ extension _ChatExport on _ChatScreenState {
       },
     );
     final refs = mediaRefs.values.expand((items) => items).toList();
+    if (isMobilePlatform) {
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(result.filePath)],
+          fileNameOverrides: [p.basename(result.filePath)],
+        ),
+      );
+    }
     return ChatExportResult(
       filePath: result.filePath,
       messageCount: allMessages.length,

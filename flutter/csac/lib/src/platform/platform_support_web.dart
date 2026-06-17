@@ -31,6 +31,21 @@ Future<String> persistChatBackgroundFile(XFile picked) async {
   throw UnsupportedError('Chat background files are not supported on Web.');
 }
 
+Future<XFile?> pickImageForMobileGallery({int imageQuality = 92}) async {
+  throw UnsupportedError('Image picking is not supported on Web here.');
+}
+
+Future<String> writeMobileDownloadFile({
+  required String fileName,
+  required List<int> bytes,
+}) async {
+  throw UnsupportedError('Local downloads are not supported on Web.');
+}
+
+Future<String> createMobileChatExportDirectory(String baseName) async {
+  throw UnsupportedError('Local chat exports are not supported on Web.');
+}
+
 Future<bool> localFileExists(String path) async => false;
 
 bool localFileExistsSync(String path) => false;

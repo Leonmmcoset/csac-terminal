@@ -628,14 +628,16 @@ class _AcopPlatformShellState extends State<AcopPlatformShell> {
 
   Future<void> uploadBotAvatar(AcopBot bot) async {
     final strings = context.strings;
-    final picked = await openFile(
-      acceptedTypeGroups: <XTypeGroup>[
-        XTypeGroup(
-          label: strings.text('Images'),
-          extensions: _acopAvatarExtensions,
-        ),
-      ],
-    );
+    final picked = isMobilePlatform
+        ? await pickImageForMobileGallery()
+        : await openFile(
+            acceptedTypeGroups: <XTypeGroup>[
+              XTypeGroup(
+                label: strings.text('Images'),
+                extensions: _acopAvatarExtensions,
+              ),
+            ],
+          );
     if (picked == null || !mounted) {
       return;
     }
@@ -2971,6 +2973,52 @@ class _AcopCodeEditor extends StatelessWidget {
                   wordWrap: true,
                   autocompleteSymbols: true,
                   padding: const EdgeInsets.all(12),
+                  margin: const EdgeInsets.fromLTRB(8, 0, 0, 0),
+                  sperator: VerticalDivider(
+                    width: 13,
+                    thickness: 1,
+                    color: theme.colorScheme.outlineVariant,
+                  ),
+                  indicatorBuilder:
+                      (context, editingController, chunkController, notifier) {
+                        return DefaultCodeLineNumber(
+                          controller: editingController,
+                          notifier: notifier,
+                          minNumberCount: 2,
+                          textStyle: TextStyle(
+                            color: theme.colorScheme.onSurfaceVariant
+                                .withValues(alpha: 0.62),
+                            fontFamily: 'Consolas',
+                            fontFamilyFallback: const [
+                              'SF Mono',
+                              'Menlo',
+                              'Monaco',
+                              'Liberation Mono',
+                              'DejaVu Sans Mono',
+                              'Noto Sans Mono',
+                              'monospace',
+                            ],
+                            fontSize: theme.textTheme.bodySmall?.fontSize,
+                            height: 1.45,
+                          ),
+                          focusedTextStyle: TextStyle(
+                            color: theme.colorScheme.primary,
+                            fontWeight: FontWeight.w700,
+                            fontFamily: 'Consolas',
+                            fontFamilyFallback: const [
+                              'SF Mono',
+                              'Menlo',
+                              'Monaco',
+                              'Liberation Mono',
+                              'DejaVu Sans Mono',
+                              'Noto Sans Mono',
+                              'monospace',
+                            ],
+                            fontSize: theme.textTheme.bodySmall?.fontSize,
+                            height: 1.45,
+                          ),
+                        );
+                      },
                   style: CodeEditorStyle(
                     fontFamily: 'Consolas',
                     fontFamilyFallback: const [
