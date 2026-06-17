@@ -1133,5 +1133,7 @@
   "Lock the desktop window to a mobile-style width.": "Lock the desktop window to a mobile-style width.",
   "Show generated code in block editor": "Show generated code in block editor",
   "When off, the block editor hides the generated code preview on desktop and mobile.": "When off, the block editor hides the generated code preview on desktop and mobile.",
+  "Wrap long code lines on mobile": "Wrap long code lines on mobile",
+  "When off, the mobile code editor scrolls horizontally instead of wrapping long lines.": "When off, the mobile code editor scrolls horizontally instead of wrapping long lines.",
   "Block tools": "Block tools"
 }
