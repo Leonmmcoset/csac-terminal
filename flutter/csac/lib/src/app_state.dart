@@ -574,6 +574,12 @@ class CsacAppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> updateWrapAcopCodeEditorOnMobile(bool enabled) async {
+    preferences = preferences.copyWith(wrapAcopCodeEditorOnMobile: enabled);
+    await preferences.save();
+    notifyListeners();
+  }
+
   Future<void> updateForceDesktopMobileWidth(bool enabled) async {
     if (preferences.forceDesktopMobileWidth == enabled) {
       return;

@@ -5804,13 +5804,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> chooseChatBackground() async {
+    final strings = context.strings;
     if (isWebPlatform) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            context.strings.text(
-              'Chat background files are not supported on Web.',
-            ),
+            strings.text('Chat background files are not supported on Web.'),
           ),
         ),
       );
@@ -5850,14 +5849,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
       return;
     }
-    final picked = await openFile(
-      acceptedTypeGroups: <XTypeGroup>[
-        XTypeGroup(
-          label: context.strings.text('Images'),
-          extensions: imageExtensions,
-        ),
-      ],
-    );
+    final picked = isMobilePlatform
+        ? await pickImageForMobileGallery()
+        : await openFile(
+            acceptedTypeGroups: <XTypeGroup>[
+              XTypeGroup(
+                label: strings.text('Images'),
+                extensions: imageExtensions,
+              ),
+            ],
+          );
     if (!mounted || picked == null) {
       return;
     }

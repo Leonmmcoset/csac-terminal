@@ -57,6 +57,36 @@ Future<String> persistChatBackgroundFile(XFile picked) async {
   return target.path;
 }
 
+Future<XFile?> pickImageForMobileGallery({int imageQuality = 92}) {
+  return ImagePicker().pickImage(
+    source: ImageSource.gallery,
+    imageQuality: imageQuality,
+  );
+}
+
+Future<String> writeMobileDownloadFile({
+  required String fileName,
+  required List<int> bytes,
+}) async {
+  final documents = await getApplicationDocumentsDirectory();
+  final directory = Directory(p.join(documents.path, 'downloads'));
+  if (!directory.existsSync()) {
+    directory.createSync(recursive: true);
+  }
+  final file = File(p.join(directory.path, fileName));
+  await file.writeAsBytes(bytes, flush: true);
+  return file.path;
+}
+
+Future<String> createMobileChatExportDirectory(String baseName) async {
+  final documents = await getApplicationDocumentsDirectory();
+  final directory = Directory(p.join(documents.path, 'exports', baseName));
+  if (!directory.existsSync()) {
+    directory.createSync(recursive: true);
+  }
+  return directory.path;
+}
+
 Future<bool> localFileExists(String path) async {
   return path.isNotEmpty && await File(path).exists();
 }

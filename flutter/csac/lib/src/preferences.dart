@@ -54,6 +54,7 @@ class CsacPreferences {
     this.serverUrl = '',
     this.acopServerUrl = '',
     this.showAcopBlockGeneratedCode = true,
+    this.wrapAcopCodeEditorOnMobile = false,
     this.forceDesktopMobileWidth = false,
     this.reduceMotion = false,
     this.showChatAvatars = true,
@@ -91,6 +92,8 @@ class CsacPreferences {
   static const _acopServerUrlKey = 'csac.acop_server_url';
   static const _showAcopBlockGeneratedCodeKey =
       'csac.acop.block_editor.show_generated_code';
+  static const _wrapAcopCodeEditorOnMobileKey =
+      'csac.acop.code_editor.mobile_word_wrap';
   static const _forceDesktopMobileWidthKey = 'csac.desktop.force_mobile_width';
   static const _reduceMotionKey = 'csac.reduce_motion';
   static const _showChatAvatarsKey = 'csac.chat.show_avatars';
@@ -128,6 +131,7 @@ class CsacPreferences {
   final String serverUrl;
   final String acopServerUrl;
   final bool showAcopBlockGeneratedCode;
+  final bool wrapAcopCodeEditorOnMobile;
   final bool forceDesktopMobileWidth;
   final bool reduceMotion;
   final bool showChatAvatars;
@@ -176,6 +180,7 @@ class CsacPreferences {
     String? serverUrl,
     String? acopServerUrl,
     bool? showAcopBlockGeneratedCode,
+    bool? wrapAcopCodeEditorOnMobile,
     bool? forceDesktopMobileWidth,
     bool? reduceMotion,
     bool? showChatAvatars,
@@ -217,6 +222,8 @@ class CsacPreferences {
       acopServerUrl: acopServerUrl ?? this.acopServerUrl,
       showAcopBlockGeneratedCode:
           showAcopBlockGeneratedCode ?? this.showAcopBlockGeneratedCode,
+      wrapAcopCodeEditorOnMobile:
+          wrapAcopCodeEditorOnMobile ?? this.wrapAcopCodeEditorOnMobile,
       forceDesktopMobileWidth:
           forceDesktopMobileWidth ?? this.forceDesktopMobileWidth,
       reduceMotion: reduceMotion ?? this.reduceMotion,
@@ -281,6 +288,8 @@ class CsacPreferences {
       ),
       showAcopBlockGeneratedCode:
           prefs.getBool(_showAcopBlockGeneratedCodeKey) ?? true,
+      wrapAcopCodeEditorOnMobile:
+          prefs.getBool(_wrapAcopCodeEditorOnMobileKey) ?? false,
       forceDesktopMobileWidth:
           prefs.getBool(_forceDesktopMobileWidthKey) ?? false,
       reduceMotion: prefs.getBool(_reduceMotionKey) ?? false,
@@ -362,6 +371,10 @@ class CsacPreferences {
     await prefs.setBool(
       _showAcopBlockGeneratedCodeKey,
       showAcopBlockGeneratedCode,
+    );
+    await prefs.setBool(
+      _wrapAcopCodeEditorOnMobileKey,
+      wrapAcopCodeEditorOnMobile,
     );
     await prefs.setBool(_forceDesktopMobileWidthKey, forceDesktopMobileWidth);
     await prefs.setBool(_reduceMotionKey, reduceMotion);
