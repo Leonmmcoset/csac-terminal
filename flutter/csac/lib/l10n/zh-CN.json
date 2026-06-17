@@ -1133,5 +1133,7 @@
   "Lock the desktop window to a mobile-style width.": "将桌面窗口锁定为移动端风格宽度。",
   "Show generated code in block editor": "积木编辑器显示生成代码",
   "When off, the block editor hides the generated code preview on desktop and mobile.": "关闭后，桌面端和移动端积木编辑器都会隐藏生成代码预览。",
+  "Wrap long code lines on mobile": "移动端代码编辑器自动换行",
+  "When off, the mobile code editor scrolls horizontally instead of wrapping long lines.": "关闭后，移动端代码过宽时横向滚动，不自动换行。",
   "Block tools": "积木工具"
 }
