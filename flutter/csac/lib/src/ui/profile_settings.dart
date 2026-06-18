@@ -523,6 +523,37 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                     ),
                     const Divider(height: 1),
                     ListTile(
+                      leading: const Icon(Icons.visibility_off_outlined),
+                      title: Text(strings.text('Hidden conversations')),
+                      subtitle: Text(
+                        strings.text('Manage conversations hidden from Home'),
+                      ),
+                      trailing: Badge(
+                        label: Text(
+                          '${widget.state.conversations.where((conversation) => conversation.hidden).length}',
+                        ),
+                        child: const Icon(Icons.chevron_right),
+                      ),
+                      onTap: () {
+                        unawaited(
+                          Navigator.of(context)
+                              .push(
+                                MaterialPageRoute<void>(
+                                  builder: (_) => HiddenConversationsScreen(
+                                    state: widget.state,
+                                  ),
+                                ),
+                              )
+                              .then((_) {
+                                if (mounted) {
+                                  setState(() {});
+                                }
+                              }),
+                        );
+                      },
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
                       leading: const Icon(Icons.waving_hand_outlined),
                       title: Text(strings.text('Pat action')),
                       subtitle: Text(user?.patAction ?? defaultPatAction),
@@ -599,6 +630,182 @@ class _PasswordChange {
   final String oldPassword;
   final String newPassword;
   final String confirmPassword;
+}
+
+class HiddenConversationsScreen extends StatefulWidget {
+  const HiddenConversationsScreen({super.key, required this.state});
+
+  final CsacAppState state;
+
+  @override
+  State<HiddenConversationsScreen> createState() =>
+      _HiddenConversationsScreenState();
+}
+
+class _HiddenConversationsScreenState extends State<HiddenConversationsScreen> {
+  bool refreshing = false;
+  final Set<String> updating = <String>{};
+
+  List<Conversation> get hiddenConversations => widget.state.conversations
+      .where((conversation) => conversation.hidden)
+      .toList(growable: false);
+
+  String conversationKey(Conversation conversation) {
+    return '${conversation.type.name}:${conversation.id}';
+  }
+
+  Future<void> refresh() async {
+    setState(() => refreshing = true);
+    try {
+      await widget.state.loadConversations();
+    } finally {
+      if (mounted) {
+        setState(() => refreshing = false);
+      }
+    }
+  }
+
+  Future<void> openConversation(Conversation conversation) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            ChatScreen(state: widget.state, conversation: conversation),
+      ),
+    );
+    if (mounted) {
+      await refresh();
+    }
+  }
+
+  Future<void> unhideConversation(Conversation conversation) async {
+    final key = conversationKey(conversation);
+    setState(() => updating.add(key));
+    try {
+      final update = await widget.state.toggleConversationHidden(conversation);
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            update.message.trim().isNotEmpty
+                ? update.message
+                : context.strings.text('Conversation unhidden.'),
+          ),
+        ),
+      );
+    } catch (err) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(err.toString())));
+    } finally {
+      if (mounted) {
+        setState(() => updating.remove(key));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    final conversations = hiddenConversations;
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(strings.text('Hidden conversations')),
+        actions: [
+          IconButton(
+            tooltip: strings.text('Refresh'),
+            onPressed: refreshing ? null : refresh,
+            icon: refreshing
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh),
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: RefreshIndicator(
+          onRefresh: refresh,
+          child: conversations.isEmpty
+              ? ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 48, 16, 24),
+                  children: [
+                    _EmptyPanel(
+                      message: strings.text('No hidden conversations.'),
+                    ),
+                  ],
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                  itemCount: conversations.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 8),
+                  itemBuilder: (context, index) {
+                    final conversation = conversations[index];
+                    final key = conversationKey(conversation);
+                    final isUpdating = updating.contains(key);
+                    final fallbackSubtitle = strings.text(
+                      conversation.type == ConversationType.group
+                          ? 'Group chat'
+                          : 'Private chat',
+                    );
+                    final subtitle =
+                        conversation.statusSubtitle.trim().isNotEmpty
+                        ? conversation.statusSubtitle.trim()
+                        : conversation.subtitle.trim().isNotEmpty
+                        ? conversation.subtitle.trim()
+                        : fallbackSubtitle;
+                    return Card(
+                      elevation: 0,
+                      margin: EdgeInsets.zero,
+                      child: _RoundedInkClip(
+                        child: ListTile(
+                          leading: _ConversationAvatarHero(
+                            conversation: conversation,
+                            radius: 22,
+                            enabled: false,
+                          ),
+                          title: Text(
+                            conversation.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          subtitle: Text(
+                            subtitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          onTap: () =>
+                              unawaited(openConversation(conversation)),
+                          trailing: isUpdating
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : IconButton(
+                                  tooltip: strings.text('Unhide conversation'),
+                                  onPressed: () => unawaited(
+                                    unhideConversation(conversation),
+                                  ),
+                                  icon: const Icon(Icons.visibility_outlined),
+                                ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ),
+    );
+  }
 }
 
 class _DeleteAccountDialog extends StatefulWidget {
@@ -5849,20 +6056,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
       return;
     }
-    final picked = isMobilePlatform
-        ? await pickImageForMobileGallery()
-        : await openFile(
-            acceptedTypeGroups: <XTypeGroup>[
-              XTypeGroup(
-                label: strings.text('Images'),
-                extensions: imageExtensions,
-              ),
-            ],
-          );
-    if (!mounted || picked == null) {
-      return;
-    }
     try {
+      final picked = isMobilePlatform
+          ? await pickImageForMobileGallery()
+          : await openFile(
+              acceptedTypeGroups: <XTypeGroup>[
+                XTypeGroup(
+                  label: strings.text('Images'),
+                  extensions: imageExtensions,
+                ),
+              ],
+            );
+      if (!mounted || picked == null) {
+        return;
+      }
       final path = await persistChatBackground(picked);
       await widget.state.updateChatBackgroundPath(path);
       if (mounted) {
@@ -5880,7 +6087,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            context.strings.format('Save failed: {error}', {'error': err}),
+            friendlyMobileFileError(
+              strings,
+              err,
+              fallbackKey: 'Save failed: {error}',
+            ),
           ),
         ),
       );

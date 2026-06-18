@@ -787,14 +787,7 @@ class ConversationScreen extends StatefulWidget {
   State<ConversationScreen> createState() => _ConversationScreenState();
 }
 
-enum _ConversationGroupFilter {
-  all,
-  important,
-  friends,
-  groups,
-  archived,
-  hidden,
-}
+enum _ConversationGroupFilter { all, important, friends, groups, archived }
 
 class _ConversationScreenState extends State<ConversationScreen> {
   final scaffoldKey = GlobalKey<ScaffoldState>();
@@ -915,8 +908,6 @@ class _ConversationScreenState extends State<ConversationScreen> {
             conversation.type == ConversationType.group;
       case _ConversationGroupFilter.archived:
         return !conversation.hidden && pref.archived;
-      case _ConversationGroupFilter.hidden:
-        return conversation.hidden;
     }
   }
 
@@ -938,8 +929,6 @@ class _ConversationScreenState extends State<ConversationScreen> {
               conversation.type == ConversationType.group;
         case _ConversationGroupFilter.archived:
           return !conversation.hidden && pref.archived;
-        case _ConversationGroupFilter.hidden:
-          return conversation.hidden;
       }
     }).length;
   }
@@ -959,8 +948,6 @@ class _ConversationScreenState extends State<ConversationScreen> {
         return 'No group conversations.';
       case _ConversationGroupFilter.archived:
         return 'No archived conversations.';
-      case _ConversationGroupFilter.hidden:
-        return 'No hidden conversations.';
     }
   }
 
@@ -1224,7 +1211,6 @@ class _ConversationScreenState extends State<ConversationScreen> {
       _ConversationGroupFilter.friends,
       _ConversationGroupFilter.groups,
       _ConversationGroupFilter.archived,
-      _ConversationGroupFilter.hidden,
     ];
     final content = RefreshIndicator(
       onRefresh: refresh,
@@ -1515,8 +1501,6 @@ String _conversationGroupLabel(_ConversationGroupFilter filter) {
       return 'Groups ({count})';
     case _ConversationGroupFilter.archived:
       return 'Archived ({count})';
-    case _ConversationGroupFilter.hidden:
-      return 'Hidden ({count})';
   }
 }
 
@@ -1532,8 +1516,6 @@ IconData _conversationGroupIcon(_ConversationGroupFilter filter) {
       return Icons.groups_outlined;
     case _ConversationGroupFilter.archived:
       return Icons.archive_outlined;
-    case _ConversationGroupFilter.hidden:
-      return Icons.visibility_off_outlined;
   }
 }
 

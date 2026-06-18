@@ -1051,6 +1051,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (pickingImage) {
       return;
     }
+    final strings = context.strings;
     setState(() => pickingImage = true);
     try {
       final picked = await imagePicker.pickImage(
@@ -1095,9 +1096,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     } catch (err) {
       if (mounted) {
         setState(
-          () => error = context.strings.format(
-            'Image selection failed: {error}',
-            {'error': err},
+          () => error = friendlyMobileFileError(
+            strings,
+            err,
+            fallbackKey: 'Image selection failed: {error}',
           ),
         );
       }
@@ -1236,11 +1238,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (pickingVoice) {
       return;
     }
+    final strings = context.strings;
     setState(() => pickingVoice = true);
     try {
       final acceptedTypeGroup = isApplePlatform
           ? XTypeGroup(
-              label: context.strings.text('Audio files'),
+              label: strings.text('Audio files'),
               extensions: voiceExtensions,
               uniformTypeIdentifiers: const <String>[
                 'public.audio',
@@ -1250,7 +1253,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               ],
             )
           : XTypeGroup(
-              label: context.strings.text('Audio files'),
+              label: strings.text('Audio files'),
               extensions: voiceExtensions,
               mimeTypes: const <String>[
                 'audio/*',
@@ -1295,6 +1298,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       unawaited(saveDraftNow());
       scrollToEnd();
       unawaited(performPendingSend(pending.localId));
+    } catch (err) {
+      if (mounted) {
+        setState(
+          () => error = friendlyMobileFileError(
+            strings,
+            err,
+            fallbackKey: 'Voice selection failed: {error}',
+          ),
+        );
+      }
     } finally {
       if (mounted) {
         setState(() => pickingVoice = false);

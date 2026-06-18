@@ -628,20 +628,20 @@ class _AcopPlatformShellState extends State<AcopPlatformShell> {
 
   Future<void> uploadBotAvatar(AcopBot bot) async {
     final strings = context.strings;
-    final picked = isMobilePlatform
-        ? await pickImageForMobileGallery()
-        : await openFile(
-            acceptedTypeGroups: <XTypeGroup>[
-              XTypeGroup(
-                label: strings.text('Images'),
-                extensions: _acopAvatarExtensions,
-              ),
-            ],
-          );
-    if (picked == null || !mounted) {
-      return;
-    }
     try {
+      final picked = isMobilePlatform
+          ? await pickImageForMobileGallery()
+          : await openFile(
+              acceptedTypeGroups: <XTypeGroup>[
+                XTypeGroup(
+                  label: strings.text('Images'),
+                  extensions: _acopAvatarExtensions,
+                ),
+              ],
+            );
+      if (picked == null || !mounted) {
+        return;
+      }
       final bytes = await picked.readAsBytes();
       await widget.state.acopClient.uploadBotAvatar(
         botId: bot.botId,
@@ -651,7 +651,13 @@ class _AcopPlatformShellState extends State<AcopPlatformShell> {
       await refreshBots();
       showSnack(strings.text('Bot avatar updated.'));
     } catch (err) {
-      showSnack(err.toString());
+      showSnack(
+        friendlyMobileFileError(
+          strings,
+          err,
+          fallbackKey: 'Image selection failed: {error}',
+        ),
+      );
     }
   }
 

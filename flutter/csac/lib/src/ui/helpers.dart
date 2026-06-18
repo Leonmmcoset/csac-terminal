@@ -225,6 +225,66 @@ Future<String> persistChatBackground(XFile picked) async {
   return persistChatBackgroundFile(picked);
 }
 
+String friendlyMobileFileError(
+  CsacStrings strings,
+  Object error, {
+  required String fallbackKey,
+}) {
+  if (error is MissingPluginException) {
+    return strings.text(
+      'This file feature is not available on this platform. Please update the app or try another device.',
+    );
+  }
+  if (error is PlatformException) {
+    final code = error.code.toLowerCase();
+    final message = (error.message ?? '').toLowerCase();
+    if (code.contains('photo_access_denied') ||
+        code.contains('camera_access_denied') ||
+        code.contains('permission') ||
+        code.contains('denied') ||
+        message.contains('permission') ||
+        message.contains('denied') ||
+        message.contains('not allow')) {
+      return strings.text(
+        'Permission was denied. Please allow photo, camera or file access in system settings and try again.',
+      );
+    }
+    if (code.contains('activity_not_found') ||
+        code.contains('unavailable') ||
+        code.contains('not_available')) {
+      return strings.text(
+        'No compatible app is available to complete this action.',
+      );
+    }
+    final detail = error.message?.trim();
+    if (detail != null && detail.isNotEmpty) {
+      return strings.format(fallbackKey, {'error': detail});
+    }
+  }
+  final raw = error.toString();
+  final lower = raw.toLowerCase();
+  if (lower.contains('permission') ||
+      lower.contains('denied') ||
+      lower.contains('not allowed') ||
+      lower.contains('unauthorized')) {
+    return strings.text(
+      'Permission was denied. Please allow photo, camera or file access in system settings and try again.',
+    );
+  }
+  if (lower.contains('missingplugin') ||
+      lower.contains('not implemented') ||
+      lower.contains('unsupported')) {
+    return strings.text(
+      'This file feature is not available on this platform. Please update the app or try another device.',
+    );
+  }
+  if (lower.contains('share') &&
+      (lower.contains('unavailable') || lower.contains('failed'))) {
+    return strings.text('Sharing is unavailable on this device.');
+  }
+  return strings.format(fallbackKey, {'error': raw});
+}
+
 extension FirstOrNullExtension<T> on Iterable<T> {
   T? get firstOrNull {
     final iterator = this.iterator;

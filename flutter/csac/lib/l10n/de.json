@@ -55,6 +55,8 @@
   "Hidden ({count})": "Hidden ({count})",
   "No archived conversations.": "No archived conversations.",
   "No hidden conversations.": "No hidden conversations.",
+  "Hidden conversations": "",
+  "Manage conversations hidden from Home": "",
   "All conversations ({count})": "All conversations ({count})",
   "Important ({count})": "Important ({count})",
   "Friends ({count})": "Friends ({count})",

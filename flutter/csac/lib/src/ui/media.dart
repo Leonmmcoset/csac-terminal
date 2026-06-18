@@ -704,9 +704,26 @@ Future<void> downloadUrl(
         fileName: fileName,
         bytes: response.bodyBytes,
       );
-      await SharePlus.instance.share(
-        ShareParams(files: [XFile(path)], fileNameOverrides: [fileName]),
-      );
+      try {
+        await SharePlus.instance.share(
+          ShareParams(files: [XFile(path)], fileNameOverrides: [fileName]),
+        );
+      } catch (err) {
+        if (!context.mounted) {
+          return;
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              friendlyMobileFileError(
+                strings,
+                err,
+                fallbackKey: 'Share failed: {error}',
+              ),
+            ),
+          ),
+        );
+      }
       if (!context.mounted) {
         return;
       }
@@ -755,7 +772,11 @@ Future<void> downloadUrl(
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          strings.format('Download failed: {error}', {'error': err}),
+          friendlyMobileFileError(
+            strings,
+            err,
+            fallbackKey: 'Download failed: {error}',
+          ),
         ),
       ),
     );

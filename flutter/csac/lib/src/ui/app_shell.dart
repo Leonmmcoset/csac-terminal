@@ -2288,18 +2288,31 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   Future<void> chooseAvatar() async {
     final strings = context.strings;
-    final picked = isMobilePlatform
-        ? await pickImageForMobileGallery()
-        : await openFile(
-            acceptedTypeGroups: <XTypeGroup>[
-              XTypeGroup(
-                label: strings.text('Images'),
-                extensions: imageExtensions,
-              ),
-            ],
-          );
-    if (picked != null && mounted) {
-      setState(() => avatar = picked);
+    try {
+      final picked = isMobilePlatform
+          ? await pickImageForMobileGallery()
+          : await openFile(
+              acceptedTypeGroups: <XTypeGroup>[
+                XTypeGroup(
+                  label: strings.text('Images'),
+                  extensions: imageExtensions,
+                ),
+              ],
+            );
+      if (picked != null && mounted) {
+        setState(() => avatar = picked);
+      }
+    } catch (err) {
+      if (!mounted) {
+        return;
+      }
+      setState(
+        () => error = friendlyMobileFileError(
+          strings,
+          err,
+          fallbackKey: 'Image selection failed: {error}',
+        ),
+      );
     }
   }
 

@@ -90,9 +90,15 @@ extension _ChatExport on _ChatScreenState {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            context.strings.format('Export failed: {error}', {
-              'error': message,
-            }),
+            err is StateError
+                ? context.strings.format('Export failed: {error}', {
+                    'error': message,
+                  })
+                : friendlyMobileFileError(
+                    context.strings,
+                    err,
+                    fallbackKey: 'Export failed: {error}',
+                  ),
           ),
         ),
       );
@@ -176,9 +182,8 @@ extension _ChatExport on _ChatScreenState {
     String directory,
     ChatExportOptions options,
   ) async {
-    final noMessagesText = context.strings.text(
-      'No cached messages to export.',
-    );
+    final strings = context.strings;
+    final noMessagesText = strings.text('No cached messages to export.');
     final cachedMessages = await widget.state.loadAllCachedMessages(
       widget.conversation,
     );
@@ -220,12 +225,22 @@ extension _ChatExport on _ChatScreenState {
     );
     final refs = mediaRefs.values.expand((items) => items).toList();
     if (isMobilePlatform) {
-      await SharePlus.instance.share(
-        ShareParams(
-          files: [XFile(result.filePath)],
-          fileNameOverrides: [p.basename(result.filePath)],
-        ),
-      );
+      try {
+        await SharePlus.instance.share(
+          ShareParams(
+            files: [XFile(result.filePath)],
+            fileNameOverrides: [p.basename(result.filePath)],
+          ),
+        );
+      } catch (err) {
+        throw StateError(
+          friendlyMobileFileError(
+            strings,
+            err,
+            fallbackKey: 'Share failed: {error}',
+          ),
+        );
+      }
     }
     return ChatExportResult(
       filePath: result.filePath,

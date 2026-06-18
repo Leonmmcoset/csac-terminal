@@ -1229,7 +1229,11 @@ class _UserQrScreenState extends State<UserQrScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              context.strings.format('Share failed: {error}', {'error': err}),
+              friendlyMobileFileError(
+                context.strings,
+                err,
+                fallbackKey: 'Share failed: {error}',
+              ),
             ),
           ),
         );
@@ -1344,7 +1348,11 @@ class _GroupQrScreenState extends State<GroupQrScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              context.strings.format('Share failed: {error}', {'error': err}),
+              friendlyMobileFileError(
+                context.strings,
+                err,
+                fallbackKey: 'Share failed: {error}',
+              ),
             ),
           ),
         );
@@ -1476,7 +1484,11 @@ class _CsacQrShareScreenState extends State<CsacQrShareScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              context.strings.format('Share failed: {error}', {'error': err}),
+              friendlyMobileFileError(
+                context.strings,
+                err,
+                fallbackKey: 'Share failed: {error}',
+              ),
             ),
           ),
         );
