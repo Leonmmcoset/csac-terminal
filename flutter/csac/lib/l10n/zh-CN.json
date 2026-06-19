@@ -115,6 +115,9 @@
   "Open": "打开",
   "Notice copied": "通知已复制",
   "Copy": "复制",
+  "Cut": "剪切",
+  "Paste": "粘贴",
+  "Select all": "全选",
   "Close": "关闭",
   "{count} unread": "{count} 条未读",
   "Mark all read": "全部标为已读",
@@ -1142,5 +1145,9 @@
   "When off, the block editor hides the generated code preview on desktop and mobile.": "关闭后，桌面端和移动端积木编辑器都会隐藏生成代码预览。",
   "Wrap long code lines on mobile": "移动端代码编辑器自动换行",
   "When off, the mobile code editor scrolls horizontally instead of wrapping long lines.": "关闭后，移动端代码过宽时横向滚动，不自动换行。",
-  "Block tools": "积木工具"
+  "Block tools": "积木工具",
+  "Confirm sending message": "确认发送消息",
+  "Send to {name}?": "发送给 {name}？",
+  "Open chat with draft": "打开聊天并填入草稿",
+  "Use draft to prefill the chat input. Add send=confirm to ask before sending.": "使用 draft 预填聊天输入框。添加 send=confirm 可在发送前确认。"
 }

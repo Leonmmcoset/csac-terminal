@@ -17,14 +17,27 @@ enum CsacDeepLinkAction {
 }
 
 class CsacDeepLinkTarget {
-  const CsacDeepLinkTarget(this.action, {this.id, this.messageId, this.query});
+  const CsacDeepLinkTarget(
+    this.action, {
+    this.id,
+    this.messageId,
+    this.query,
+    this.draftText,
+    this.confirmSend = false,
+  });
 
   final CsacDeepLinkAction action;
   final int? id;
   final int? messageId;
   final String? query;
+  final String? draftText;
+  final bool confirmSend;
 
   bool get isSupported => action != CsacDeepLinkAction.unsupported;
+
+  bool get hasDraftAction {
+    return (draftText ?? '').isNotEmpty || confirmSend;
+  }
 }
 
 bool isCsacDeepLink(Uri uri) {
@@ -114,6 +127,7 @@ CsacDeepLinkTarget parseCsacDeepLink(Uri uri) {
         segments.length > 3 && segments[2] == 'message'
             ? segments[3]
             : uri.queryParameters['message_id'],
+        uri,
       );
     case 'private':
     case 'friend':
@@ -125,6 +139,7 @@ CsacDeepLinkTarget parseCsacDeepLink(Uri uri) {
         segments.length > 3 && segments[2] == 'message'
             ? segments[3]
             : uri.queryParameters['message_id'],
+        uri,
       );
   }
   return const CsacDeepLinkTarget(CsacDeepLinkAction.unsupported);
@@ -136,6 +151,22 @@ String csacUserProfileDeepLink(int uid) {
 
 String csacGroupChatDeepLink(int roomId) {
   return '$csacDeepLinkScheme://chat/group/$roomId';
+}
+
+String csacGroupDraftDeepLink(
+  int roomId,
+  String draft, {
+  bool confirmSend = false,
+}) {
+  return _chatDraftDeepLink('group', roomId, draft, confirmSend: confirmSend);
+}
+
+String csacPrivateDraftDeepLink(
+  int uid,
+  String draft, {
+  bool confirmSend = false,
+}) {
+  return _chatDraftDeepLink('private', uid, draft, confirmSend: confirmSend);
 }
 
 String csacSpacePostDeepLink(int postId) {
@@ -200,6 +231,7 @@ CsacDeepLinkTarget _chatLinkTarget(Uri uri, List<String> segments) {
         CsacDeepLinkAction.groupMessage,
         id,
         messageId,
+        uri,
       );
     case 'private':
     case 'friend':
@@ -209,6 +241,7 @@ CsacDeepLinkTarget _chatLinkTarget(Uri uri, List<String> segments) {
         CsacDeepLinkAction.privateMessage,
         id,
         messageId,
+        uri,
       );
   }
   return const CsacDeepLinkTarget(CsacDeepLinkAction.unsupported);
@@ -236,6 +269,7 @@ CsacDeepLinkTarget _messageLinkTarget(Uri uri, List<String> segments) {
         CsacDeepLinkAction.groupMessage,
         id,
         messageId,
+        uri,
       );
     case 'private':
     case 'friend':
@@ -245,6 +279,7 @@ CsacDeepLinkTarget _messageLinkTarget(Uri uri, List<String> segments) {
         CsacDeepLinkAction.privateMessage,
         id,
         messageId,
+        uri,
       );
   }
   return const CsacDeepLinkTarget(CsacDeepLinkAction.unsupported);
@@ -254,17 +289,70 @@ CsacDeepLinkTarget _chatOrMessageTarget(
   CsacDeepLinkAction chatAction,
   CsacDeepLinkAction messageAction,
   String? rawId,
-  String? rawMessageId,
-) {
+  String? rawMessageId, [
+  Uri? uri,
+]) {
   final id = int.tryParse((rawId ?? '').trim()) ?? 0;
   if (id <= 0) {
     return const CsacDeepLinkTarget(CsacDeepLinkAction.unsupported);
   }
   final messageId = int.tryParse((rawMessageId ?? '').trim()) ?? 0;
+  final draftText = uri == null ? null : _draftTextFromUri(uri);
+  final confirmSend = uri == null ? false : _confirmSendFromUri(uri);
   if (messageId <= 0) {
-    return CsacDeepLinkTarget(chatAction, id: id);
+    return CsacDeepLinkTarget(
+      chatAction,
+      id: id,
+      draftText: draftText,
+      confirmSend: confirmSend,
+    );
   }
-  return CsacDeepLinkTarget(messageAction, id: id, messageId: messageId);
+  return CsacDeepLinkTarget(
+    messageAction,
+    id: id,
+    messageId: messageId,
+    draftText: draftText,
+    confirmSend: confirmSend,
+  );
+}
+
+String _chatDraftDeepLink(
+  String type,
+  int id,
+  String draft, {
+  required bool confirmSend,
+}) {
+  final params = <String, String>{
+    'draft': draft,
+    if (confirmSend) 'send': 'confirm',
+  };
+  final query = Uri(queryParameters: params).query;
+  return '$csacDeepLinkScheme://chat/$type/$id?$query';
+}
+
+String? _draftTextFromUri(Uri uri) {
+  final raw =
+      uri.queryParameters['draft'] ??
+      uri.queryParameters['text'] ??
+      uri.queryParameters['message'] ??
+      uri.queryParameters['body'];
+  return raw == null || raw.isEmpty ? null : raw;
+}
+
+bool _confirmSendFromUri(Uri uri) {
+  final value =
+      (uri.queryParameters['send'] ??
+              uri.queryParameters['confirm_send'] ??
+              uri.queryParameters['action'] ??
+              '')
+          .trim()
+          .toLowerCase();
+  return value == 'confirm' ||
+      value == 'confirm-send' ||
+      value == 'confirm_send' ||
+      value == 'ask' ||
+      value == 'true' ||
+      value == '1';
 }
 
 CsacDeepLinkTarget _profileLinkTarget(Uri uri, List<String> segments) {

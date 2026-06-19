@@ -5,6 +5,7 @@ import flutter_local_notifications
 @main
 @objc class AppDelegate: FlutterAppDelegate {
   private var backgroundRefreshChannel: FlutterMethodChannel?
+  private var shortcutsChannel: FlutterMethodChannel?
 
   override func application(
     _ application: UIApplication,
@@ -22,6 +23,19 @@ import flutter_local_notifications
         name: "ink.jjmm.csacflutter/background_refresh",
         binaryMessenger: controller.binaryMessenger
       )
+      shortcutsChannel = FlutterMethodChannel(
+        name: "ink.jjmm.csacflutter/shortcuts",
+        binaryMessenger: controller.binaryMessenger
+      )
+      shortcutsChannel?.setMethodCallHandler { call, result in
+        if call.method == "setUnreadStatus",
+           let status = call.arguments as? [String: Any] {
+          UserDefaults.standard.set(status, forKey: "CsACShortcutUnreadStatus")
+          result(nil)
+          return
+        }
+        result(FlutterMethodNotImplemented)
+      }
     }
     application.setMinimumBackgroundFetchInterval(UIApplication.backgroundFetchIntervalMinimum)
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)

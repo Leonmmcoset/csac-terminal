@@ -115,6 +115,9 @@
   "Open": "Open",
   "Notice copied": "Notice copied",
   "Copy": "Copy",
+  "Cut": "",
+  "Paste": "",
+  "Select all": "",
   "Close": "Close",
   "{count} unread": "{count} unread",
   "Mark all read": "Mark all read",
@@ -1137,5 +1140,9 @@
   "When off, the block editor hides the generated code preview on desktop and mobile.": "When off, the block editor hides the generated code preview on desktop and mobile.",
   "Wrap long code lines on mobile": "Wrap long code lines on mobile",
   "When off, the mobile code editor scrolls horizontally instead of wrapping long lines.": "When off, the mobile code editor scrolls horizontally instead of wrapping long lines.",
-  "Block tools": "Block tools"
+  "Block tools": "Block tools",
+  "Confirm sending message": "",
+  "Send to {name}?": "",
+  "Open chat with draft": "",
+  "Use draft to prefill the chat input. Add send=confirm to ask before sending.": ""
 }

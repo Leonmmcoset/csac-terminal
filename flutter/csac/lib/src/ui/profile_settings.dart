@@ -432,6 +432,9 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   Widget build(BuildContext context) {
     final user = widget.state.user;
     final strings = context.strings;
+    final hiddenConversationCount = widget.state.conversations
+        .where((conversation) => conversation.hidden)
+        .length;
     return Scaffold(
       appBar: AppBar(title: Text(strings.text('Account settings'))),
       body: SafeArea(
@@ -522,37 +525,37 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                             },
                     ),
                     const Divider(height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.visibility_off_outlined),
-                      title: Text(strings.text('Hidden conversations')),
-                      subtitle: Text(
-                        strings.text('Manage conversations hidden from Home'),
-                      ),
-                      trailing: Badge(
-                        label: Text(
-                          '${widget.state.conversations.where((conversation) => conversation.hidden).length}',
+                    if (hiddenConversationCount > 0) ...[
+                      ListTile(
+                        leading: const Icon(Icons.visibility_off_outlined),
+                        title: Text(strings.text('Hidden conversations')),
+                        subtitle: Text(
+                          strings.text('Manage conversations hidden from Home'),
                         ),
-                        child: const Icon(Icons.chevron_right),
-                      ),
-                      onTap: () {
-                        unawaited(
-                          Navigator.of(context)
-                              .push(
-                                MaterialPageRoute<void>(
-                                  builder: (_) => HiddenConversationsScreen(
-                                    state: widget.state,
+                        trailing: Badge(
+                          label: Text('$hiddenConversationCount'),
+                          child: const Icon(Icons.chevron_right),
+                        ),
+                        onTap: () {
+                          unawaited(
+                            Navigator.of(context)
+                                .push(
+                                  MaterialPageRoute<void>(
+                                    builder: (_) => HiddenConversationsScreen(
+                                      state: widget.state,
+                                    ),
                                   ),
-                                ),
-                              )
-                              .then((_) {
-                                if (mounted) {
-                                  setState(() {});
-                                }
-                              }),
-                        );
-                      },
-                    ),
-                    const Divider(height: 1),
+                                )
+                                .then((_) {
+                                  if (mounted) {
+                                    setState(() {});
+                                  }
+                                }),
+                          );
+                        },
+                      ),
+                      const Divider(height: 1),
+                    ],
                     ListTile(
                       leading: const Icon(Icons.waving_hand_outlined),
                       title: Text(strings.text('Pat action')),
@@ -1662,9 +1665,7 @@ class _AppInfoSubtitle extends StatelessWidget {
       future: PackageInfo.fromPlatform(),
       builder: (context, snapshot) {
         final packageInfo = snapshot.data;
-        final version = packageInfo == null
-            ? '-'
-            : '${packageInfo.version}+${packageInfo.buildNumber}';
+        final version = packageInfo?.version ?? '-';
         return Text('CsAC $version | $_csacAppBranch');
       },
     );
@@ -3534,6 +3535,15 @@ const _urlSchemeDocEntries = <_UrlSchemeDocEntry>[
     ],
   ),
   _UrlSchemeDocEntry(
+    titleKey: 'Open chat with draft',
+    descriptionKey:
+        'Use draft to prefill the chat input. Add send=confirm to ask before sending.',
+    examples: [
+      '$csacDeepLinkScheme://chat/group/{id}?draft=hello',
+      '$csacDeepLinkScheme://chat/private/{id}?draft=hello&send=confirm',
+    ],
+  ),
+  _UrlSchemeDocEntry(
     titleKey: 'Open space post',
     descriptionKey: 'Replace {id} with the post ID.',
     examples: [
@@ -5178,8 +5188,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       VersionUpdateInfo result;
       try {
         result = await checker.check(
-          currentVersion: '${packageInfo.version}+${packageInfo.buildNumber}'
-              .trim(),
+          currentVersion: packageInfo.version.trim(),
           timeout: const Duration(seconds: 8),
         );
       } finally {

@@ -21,6 +21,9 @@ class _MainShellState extends State<MainShell> {
   int lastUnreadChats = 0;
   Conversation? selectedConversation;
   int? selectedFocusMessageId;
+  String? selectedDraftText;
+  bool selectedDraftConfirmSend = false;
+  int selectedDraftRequestId = 0;
   int? selectedSpacePostId;
   String selectedSearchQuery = '';
   Timer? timer;
@@ -229,20 +232,34 @@ class _MainShellState extends State<MainShell> {
       case CsacDeepLinkAction.userProfile:
         return openDeepLinkUserProfile(target.id ?? 0);
       case CsacDeepLinkAction.groupChat:
-        return openDeepLinkChat(ConversationType.group, target.id ?? 0);
+        return openDeepLinkChat(
+          ConversationType.group,
+          target.id ?? 0,
+          draftText: target.draftText,
+          confirmSend: target.confirmSend,
+        );
       case CsacDeepLinkAction.privateChat:
-        return openDeepLinkChat(ConversationType.private, target.id ?? 0);
+        return openDeepLinkChat(
+          ConversationType.private,
+          target.id ?? 0,
+          draftText: target.draftText,
+          confirmSend: target.confirmSend,
+        );
       case CsacDeepLinkAction.groupMessage:
         return openDeepLinkChat(
           ConversationType.group,
           target.id ?? 0,
           focusMessageId: target.messageId,
+          draftText: target.draftText,
+          confirmSend: target.confirmSend,
         );
       case CsacDeepLinkAction.privateMessage:
         return openDeepLinkChat(
           ConversationType.private,
           target.id ?? 0,
           focusMessageId: target.messageId,
+          draftText: target.draftText,
+          confirmSend: target.confirmSend,
         );
       case CsacDeepLinkAction.unsupported:
         return false;
@@ -283,6 +300,8 @@ class _MainShellState extends State<MainShell> {
     ConversationType type,
     int id, {
     int? focusMessageId,
+    String? draftText,
+    bool confirmSend = false,
   }) async {
     if (id <= 0) {
       return false;
@@ -306,26 +325,40 @@ class _MainShellState extends State<MainShell> {
       return false;
     }
 
-    Navigator.of(context).popUntil((route) => route.isFirst);
+    final navigator = Navigator.of(context);
+    final wide = MediaQuery.sizeOf(context).width >= 900;
+    navigator.popUntil((route) => route.isFirst);
     final opened = conversation.copyWith(unreadCount: 0);
+    final externalDraft = (draftText ?? '').trim();
+    if (externalDraft.isNotEmpty) {
+      await ConversationDraftStore.save(opened, externalDraft);
+      selectedDraftRequestId += 1;
+    }
+    if (!mounted) {
+      return true;
+    }
     unawaited(widget.state.markConversationRead(conversation));
     widget.state.setActiveConversation(opened);
     selectDestination(0);
-    final wide = MediaQuery.sizeOf(context).width >= 900;
     if (wide) {
       setState(() {
         selectedConversation = opened;
         selectedFocusMessageId = focusMessageId;
+        selectedDraftText = externalDraft.isEmpty ? null : externalDraft;
+        selectedDraftConfirmSend = confirmSend && externalDraft.isNotEmpty;
       });
       lastUnreadChats = totalUnreadChats();
       return true;
     }
-    await Navigator.of(context).push(
+    await navigator.push(
       MaterialPageRoute<void>(
         builder: (_) => ChatScreen(
           state: widget.state,
           conversation: opened,
           focusMessageId: focusMessageId,
+          initialDraftText: externalDraft.isEmpty ? null : externalDraft,
+          confirmInitialDraftSend: confirmSend && externalDraft.isNotEmpty,
+          draftRequestId: externalDraft.isEmpty ? 0 : selectedDraftRequestId,
         ),
       ),
     );
@@ -408,6 +441,9 @@ class _MainShellState extends State<MainShell> {
                 setState(() {
                   selectedConversation = conversation.copyWith(unreadCount: 0);
                   selectedFocusMessageId = null;
+                  selectedDraftText = null;
+                  selectedDraftConfirmSend = false;
+                  selectedDraftRequestId = 0;
                 });
                 lastUnreadChats = totalUnreadChats();
               }
@@ -491,6 +527,9 @@ class _MainShellState extends State<MainShell> {
                         conversations: pages[0],
                         selectedConversation: selectedConversation,
                         focusMessageId: selectedFocusMessageId,
+                        draftText: selectedDraftText,
+                        confirmDraftSend: selectedDraftConfirmSend,
+                        draftRequestId: selectedDraftRequestId,
                       )
                     : pages[index],
               ),
@@ -682,12 +721,18 @@ class _WideChatLayout extends StatelessWidget {
     required this.conversations,
     required this.selectedConversation,
     this.focusMessageId,
+    this.draftText,
+    this.confirmDraftSend = false,
+    this.draftRequestId = 0,
   });
 
   final CsacAppState state;
   final Widget conversations;
   final Conversation? selectedConversation;
   final int? focusMessageId;
+  final String? draftText;
+  final bool confirmDraftSend;
+  final int draftRequestId;
 
   @override
   Widget build(BuildContext context) {
@@ -710,6 +755,9 @@ class _WideChatLayout extends StatelessWidget {
                   conversation: selected,
                   embedded: true,
                   focusMessageId: focusMessageId,
+                  initialDraftText: draftText,
+                  confirmInitialDraftSend: confirmDraftSend,
+                  draftRequestId: draftRequestId,
                 ),
         ),
       ],

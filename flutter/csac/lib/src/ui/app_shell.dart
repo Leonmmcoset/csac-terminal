@@ -111,6 +111,9 @@ class _CsacMobileAppState extends State<CsacMobileApp>
   final backgroundRefreshChannel = const MethodChannel(
     'ink.jjmm.csacflutter/background_refresh',
   );
+  final shortcutsChannel = const MethodChannel(
+    'ink.jjmm.csacflutter/shortcuts',
+  );
   final scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
   final navigatorKey = GlobalKey<NavigatorState>();
   final mainShellKey = GlobalKey<_MainShellState>();
@@ -124,6 +127,8 @@ class _CsacMobileAppState extends State<CsacMobileApp>
   bool lastCanUseAppLock = false;
   bool startupUpdateCheckStarted = false;
   bool localNotificationPermissionPrimed = false;
+  String lastShortcutsUnreadPayload = '';
+  String shortcutsUnreadUpdatedAt = '';
   int appLockUserId = 0;
 
   Map<String, int> unreadSnapshot() {
@@ -149,6 +154,7 @@ class _CsacMobileAppState extends State<CsacMobileApp>
     unawaited(initializeDeepLinks());
     notificationTapSub = localNotifications.taps.listen(openNotificationChat);
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      syncShortcutsUnreadStatus();
       maybeCheckForUpdatesOnStartup();
     });
   }
@@ -413,6 +419,7 @@ class _CsacMobileAppState extends State<CsacMobileApp>
   void handleStateChanged() {
     maybeCheckForUpdatesOnStartup();
     maybePrimeLocalNotificationPermission();
+    syncShortcutsUnreadStatus();
     if (pendingDeepLink != null &&
         !state.bootstrapping &&
         state.user != null &&
@@ -450,6 +457,54 @@ class _CsacMobileAppState extends State<CsacMobileApp>
     }
   }
 
+  void syncShortcutsUnreadStatus() {
+    if (!isApplePlatform) {
+      return;
+    }
+    final payload = shortcutsUnreadPayload();
+    final encoded = jsonEncode(payload);
+    if (encoded == lastShortcutsUnreadPayload) {
+      return;
+    }
+    lastShortcutsUnreadPayload = encoded;
+    shortcutsUnreadUpdatedAt = DateTime.now().toIso8601String();
+    final payloadWithTime = <String, Object?>{
+      ...payload,
+      'updated_at': shortcutsUnreadUpdatedAt,
+    };
+    unawaited(
+      shortcutsChannel
+          .invokeMethod<void>('setUnreadStatus', payloadWithTime)
+          .catchError((_) {}),
+    );
+  }
+
+  Map<String, Object?> shortcutsUnreadPayload() {
+    final totalUnread = state.conversations.fold<int>(
+      0,
+      (total, conversation) => total + conversation.unreadCount,
+    );
+    return <String, Object?>{
+      'total_unread': totalUnread,
+      'notification_total': state.notificationCounts.total,
+      'notice_count': state.notificationCounts.notices,
+      'mention_count': state.notificationCounts.mentions,
+      'friend_change_count': state.notificationCounts.friendChanges,
+      'friend_request_count': state.notificationCounts.friendRequests,
+      'group_application_count': state.notificationCounts.groupApplications,
+      'conversations': <Object?>[
+        for (final conversation in state.conversations)
+          <String, Object?>{
+            'type': conversation.type.name,
+            'id': conversation.id,
+            'name': conversation.name,
+            'unread_count': conversation.unreadCount,
+            'hidden': conversation.hidden,
+          },
+      ],
+    };
+  }
+
   void maybePrimeLocalNotificationPermission() {
     if (localNotificationPermissionPrimed ||
         state.bootstrapping ||
@@ -475,8 +530,7 @@ class _CsacMobileAppState extends State<CsacMobileApp>
     try {
       final packageInfo = await PackageInfo.fromPlatform();
       final result = await updateChecker.check(
-        currentVersion: '${packageInfo.version}+${packageInfo.buildNumber}'
-            .trim(),
+        currentVersion: packageInfo.version.trim(),
       );
       if (!mounted || !result.hasUpdate) {
         return;

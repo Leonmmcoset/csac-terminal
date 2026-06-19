@@ -3012,6 +3012,9 @@ class _AcopCodeEditor extends StatelessWidget {
               child: ExcludeSemantics(
                 child: CodeEditor(
                   controller: controller,
+                  toolbarController: _AcopCodeSelectionToolbarController(
+                    builder: _buildAcopCodeSelectionToolbar,
+                  ),
                   wordWrap: isMobilePlatform ? mobileWordWrap : true,
                   autocompleteSymbols: true,
                   padding: const EdgeInsets.all(12),
@@ -3101,6 +3104,154 @@ class _AcopCodeEditor extends StatelessWidget {
       ],
     );
   }
+}
+
+class _AcopCodeSelectionToolbarController
+    implements SelectionToolbarController {
+  _AcopCodeSelectionToolbarController({required this.builder});
+
+  final ToolbarMenuBuilder builder;
+  OverlayEntry? _entry;
+
+  @override
+  void hide(BuildContext context) {
+    _entry?.remove();
+    _entry = null;
+  }
+
+  @override
+  void show({
+    required BuildContext context,
+    required CodeLineEditingController controller,
+    required TextSelectionToolbarAnchors anchors,
+    Rect? renderRect,
+    required LayerLink layerLink,
+    required ValueNotifier<bool> visibility,
+  }) {
+    hide(context);
+    if (!isMobilePlatform) {
+      unawaited(
+        showMenu<void>(
+          context: context,
+          position: RelativeRect.fromSize(
+            anchors.primaryAnchor & const Size(180, double.infinity),
+            MediaQuery.of(context).size,
+          ),
+          items: [
+            _AcopCodeContextMenuItem(
+              label: context.strings.text('Copy'),
+              onTap: () => unawaited(controller.copy()),
+            ),
+            _AcopCodeContextMenuItem(
+              label: context.strings.text('Cut'),
+              onTap: controller.cut,
+            ),
+            _AcopCodeContextMenuItem(
+              label: context.strings.text('Paste'),
+              onTap: controller.paste,
+            ),
+            _AcopCodeContextMenuItem(
+              label: context.strings.text('Select all'),
+              onTap: controller.selectAll,
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+    if (renderRect == null) {
+      return;
+    }
+    final overlay = Overlay.maybeOf(context, rootOverlay: true);
+    if (overlay == null) {
+      return;
+    }
+    final entry = OverlayEntry(
+      builder: (_) => CodeEditorTapRegion(
+        child: Directionality(
+          textDirection: Directionality.of(context),
+          child: ValueListenableBuilder<bool>(
+            valueListenable: visibility,
+            builder: (context, visible, child) {
+              return CompositedTransformFollower(
+                link: layerLink,
+                showWhenUnlinked: false,
+                offset: -renderRect.topLeft,
+                child: AnimatedOpacity(
+                  opacity: visible ? 1 : 0,
+                  duration: const Duration(milliseconds: 120),
+                  child: child,
+                ),
+              );
+            },
+            child: builder(
+              context: context,
+              anchors: anchors,
+              controller: controller,
+              onDismiss: () => hide(context),
+              onRefresh: () => show(
+                context: context,
+                controller: controller,
+                anchors: anchors,
+                renderRect: renderRect,
+                layerLink: layerLink,
+                visibility: visibility,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    overlay.insert(entry);
+    _entry = entry;
+  }
+}
+
+class _AcopCodeContextMenuItem extends PopupMenuItem<void>
+    implements PreferredSizeWidget {
+  _AcopCodeContextMenuItem({required String label, required VoidCallback onTap})
+    : super(onTap: onTap, child: Text(label));
+
+  @override
+  Size get preferredSize => const Size(180, 40);
+}
+
+Widget _buildAcopCodeSelectionToolbar({
+  required BuildContext context,
+  required TextSelectionToolbarAnchors anchors,
+  required CodeLineEditingController controller,
+  required VoidCallback onDismiss,
+  required VoidCallback onRefresh,
+}) {
+  void runAndDismiss(VoidCallback action) {
+    action();
+    onDismiss();
+  }
+
+  return AdaptiveTextSelectionToolbar.buttonItems(
+    anchors: anchors,
+    buttonItems: [
+      ContextMenuButtonItem(
+        label: context.strings.text('Copy'),
+        onPressed: () {
+          unawaited(controller.copy());
+          onDismiss();
+        },
+      ),
+      ContextMenuButtonItem(
+        label: context.strings.text('Cut'),
+        onPressed: () => runAndDismiss(controller.cut),
+      ),
+      ContextMenuButtonItem(
+        label: context.strings.text('Paste'),
+        onPressed: () => runAndDismiss(controller.paste),
+      ),
+      ContextMenuButtonItem(
+        label: context.strings.text('Select all'),
+        onPressed: () => runAndDismiss(controller.selectAll),
+      ),
+    ],
+  );
 }
 
 class _AcopDialogBody extends StatelessWidget {

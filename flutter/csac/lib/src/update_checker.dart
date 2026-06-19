@@ -88,15 +88,12 @@ class VersionUpdateChecker {
   static bool versionMatches(String currentVersion, String releaseVersion) {
     final current = _canonicalVersion(currentVersion);
     final release = _canonicalVersion(releaseVersion);
-    if (current.full.isNotEmpty && release.full.isNotEmpty) {
-      return current.full == release.full;
-    }
     return current.base.isNotEmpty && current.base == release.base;
   }
 
   static String displayVersion(String value) {
     final version = _canonicalVersion(value);
-    return version.full.isEmpty ? value.trim() : version.full;
+    return version.base.isEmpty ? value.trim() : version.base;
   }
 
   static ({String base, String full}) _canonicalVersion(String value) {

@@ -71,12 +71,18 @@ class ChatScreen extends StatefulWidget {
     required this.state,
     required this.conversation,
     this.focusMessageId,
+    this.initialDraftText,
+    this.confirmInitialDraftSend = false,
+    this.draftRequestId = 0,
     this.embedded = false,
   });
 
   final CsacAppState state;
   final Conversation conversation;
   final int? focusMessageId;
+  final String? initialDraftText;
+  final bool confirmInitialDraftSend;
+  final int draftRequestId;
   final bool embedded;
 
   @override
@@ -132,6 +138,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   bool composeMenuOpen = false;
   double keyboardInsetBottom = 0;
   int? pressedMessageId;
+  int handledDraftRequestId = 0;
   String? error;
 
   bool get selectionMode => selectedMessageIds.isNotEmpty;
@@ -271,6 +278,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     scroll.addListener(handleScroll);
     bindVoicePlayer();
     loadDraft();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      applyExternalDraftRequest();
+    });
     loadGroupAnnouncement();
     loadInitial();
     unawaited(loadChatHint());
@@ -278,6 +288,18 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       const Duration(seconds: 4),
       (_) => refresh(silent: true),
     );
+  }
+
+  @override
+  void didUpdateWidget(covariant ChatScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.draftRequestId != widget.draftRequestId ||
+        oldWidget.initialDraftText != widget.initialDraftText ||
+        oldWidget.confirmInitialDraftSend != widget.confirmInitialDraftSend) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        applyExternalDraftRequest();
+      });
+    }
   }
 
   @override
@@ -412,6 +434,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   Future<void> loadDraft() async {
+    if (hasPendingExternalDraftRequest) {
+      return;
+    }
     final draft = await ConversationDraftStore.load(widget.conversation);
     if (!mounted || input.text.isNotEmpty) {
       return;
@@ -435,6 +460,88 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               body: draft.replyBody,
             );
       });
+    }
+  }
+
+  bool get hasPendingExternalDraftRequest {
+    return widget.draftRequestId > 0 &&
+        widget.draftRequestId != handledDraftRequestId &&
+        (widget.initialDraftText ?? '').isNotEmpty;
+  }
+
+  Future<void> applyExternalDraftRequest() async {
+    if (!mounted || !hasPendingExternalDraftRequest) {
+      return;
+    }
+    handledDraftRequestId = widget.draftRequestId;
+    await applyExternalDraftText(
+      widget.initialDraftText ?? '',
+      confirmSend: widget.confirmInitialDraftSend,
+    );
+  }
+
+  Future<void> applyExternalDraftText(
+    String text, {
+    required bool confirmSend,
+  }) async {
+    final draft = text.trim();
+    if (draft.isEmpty) {
+      return;
+    }
+    applyingDraft = true;
+    input
+      ..text = draft
+      ..selection = TextSelection.collapsed(offset: draft.length);
+    applyingDraft = false;
+    setState(() {
+      replyTarget = null;
+      mentionTargets.clear();
+      error = null;
+    });
+    await saveDraftNow();
+    inputFocus.requestFocus();
+    if (!confirmSend || !mounted) {
+      return;
+    }
+    await confirmAndSendExternalDraft(draft);
+  }
+
+  Future<void> confirmAndSendExternalDraft(String text) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(context.strings.text('Confirm sending message')),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                context.strings.format('Send to {name}?', {
+                  'name': displayedConversation.name,
+                }),
+              ),
+              const SizedBox(height: 12),
+              SelectableText(text),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(context.strings.text('Cancel')),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            icon: const Icon(Icons.send),
+            label: Text(context.strings.text('Send')),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted && input.text.trim() == text.trim()) {
+      await send();
     }
   }
 
@@ -1882,20 +1989,34 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         await openUserProfile(context, widget.state, uid);
         return true;
       case CsacDeepLinkAction.groupChat:
-        return openDeepLinkedConversation(ConversationType.group, target.id);
+        return openDeepLinkedConversation(
+          ConversationType.group,
+          target.id,
+          draftText: target.draftText,
+          confirmSend: target.confirmSend,
+        );
       case CsacDeepLinkAction.privateChat:
-        return openDeepLinkedConversation(ConversationType.private, target.id);
+        return openDeepLinkedConversation(
+          ConversationType.private,
+          target.id,
+          draftText: target.draftText,
+          confirmSend: target.confirmSend,
+        );
       case CsacDeepLinkAction.groupMessage:
         return openDeepLinkedConversation(
           ConversationType.group,
           target.id,
           focusMessageId: target.messageId,
+          draftText: target.draftText,
+          confirmSend: target.confirmSend,
         );
       case CsacDeepLinkAction.privateMessage:
         return openDeepLinkedConversation(
           ConversationType.private,
           target.id,
           focusMessageId: target.messageId,
+          draftText: target.draftText,
+          confirmSend: target.confirmSend,
         );
       case CsacDeepLinkAction.chats:
       case CsacDeepLinkAction.space:
@@ -1917,6 +2038,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     ConversationType type,
     int? id, {
     int? focusMessageId,
+    String? draftText,
+    bool confirmSend = false,
   }) async {
     final conversationId = id ?? 0;
     if (conversationId <= 0) {
@@ -1924,13 +2047,25 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
     if (widget.conversation.type == type &&
         widget.conversation.id == conversationId) {
-      if (focusMessageId != null && focusMessageId > 0) {
-        await Navigator.of(context).push(
+      final navigator = Navigator.of(context);
+      final externalDraft = (draftText ?? '').trim();
+      final opensFocusedMessage = focusMessageId != null && focusMessageId > 0;
+      if (externalDraft.isNotEmpty && !opensFocusedMessage) {
+        await applyExternalDraftText(externalDraft, confirmSend: confirmSend);
+      }
+      if (!mounted) {
+        return true;
+      }
+      if (opensFocusedMessage) {
+        await navigator.push(
           MaterialPageRoute<void>(
             builder: (_) => ChatScreen(
               state: widget.state,
               conversation: widget.conversation,
               focusMessageId: focusMessageId,
+              initialDraftText: externalDraft.isEmpty ? null : externalDraft,
+              confirmInitialDraftSend: confirmSend && externalDraft.isNotEmpty,
+              draftRequestId: DateTime.now().microsecondsSinceEpoch,
             ),
           ),
         );
@@ -1970,14 +2105,27 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       await openUserProfile(context, widget.state, conversationId);
       return true;
     }
+    final navigator = Navigator.of(context);
     final opened = conversation!.copyWith(unreadCount: 0);
+    final externalDraft = (draftText ?? '').trim();
+    if (externalDraft.isNotEmpty) {
+      await ConversationDraftStore.save(opened, externalDraft);
+    }
+    if (!mounted) {
+      return true;
+    }
     unawaited(widget.state.markConversationRead(opened));
-    await Navigator.of(context).push(
+    await navigator.push(
       MaterialPageRoute<void>(
         builder: (_) => ChatScreen(
           state: widget.state,
           conversation: opened,
           focusMessageId: focusMessageId,
+          initialDraftText: externalDraft.isEmpty ? null : externalDraft,
+          confirmInitialDraftSend: confirmSend && externalDraft.isNotEmpty,
+          draftRequestId: externalDraft.isEmpty
+              ? 0
+              : DateTime.now().microsecondsSinceEpoch,
         ),
       ),
     );
