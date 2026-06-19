@@ -115,6 +115,9 @@
   "Open": "Open",
   "Notice copied": "Notice copied",
   "Copy": "Copy",
+  "Cut": "剪下",
+  "Paste": "貼上",
+  "Select all": "全選",
   "Close": "Close",
   "{count} unread": "{count} unread",
   "Mark all read": "Mark all read",
@@ -1142,5 +1145,9 @@
   "When off, the block editor hides the generated code preview on desktop and mobile.": "When off, the block editor hides the generated code preview on desktop and mobile.",
   "Wrap long code lines on mobile": "Wrap long code lines on mobile",
   "When off, the mobile code editor scrolls horizontally instead of wrapping long lines.": "When off, the mobile code editor scrolls horizontally instead of wrapping long lines.",
-  "Block tools": "Block tools"
+  "Block tools": "Block tools",
+  "Confirm sending message": "確認傳送訊息",
+  "Send to {name}?": "傳送給 {name}？",
+  "Open chat with draft": "開啟聊天並填入草稿",
+  "Use draft to prefill the chat input. Add send=confirm to ask before sending.": "使用 draft 預填聊天輸入框。加入 send=confirm 可在傳送前確認。"
 }
