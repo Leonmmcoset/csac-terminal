@@ -3112,9 +3112,14 @@ class _AcopCodeSelectionToolbarController
 
   final ToolbarMenuBuilder builder;
   OverlayEntry? _entry;
+  ValueNotifier<bool>? _visibility;
+  VoidCallback? _visibilityListener;
 
   @override
   void hide(BuildContext context) {
+    _visibility?.removeListener(_visibilityListener ?? () {});
+    _visibility = null;
+    _visibilityListener = null;
     _entry?.remove();
     _entry = null;
   }
@@ -3166,44 +3171,64 @@ class _AcopCodeSelectionToolbarController
     if (overlay == null) {
       return;
     }
+    void dismissToolbar() => hide(context);
     final entry = OverlayEntry(
-      builder: (_) => CodeEditorTapRegion(
-        child: Directionality(
-          textDirection: Directionality.of(context),
-          child: ValueListenableBuilder<bool>(
-            valueListenable: visibility,
-            builder: (context, visible, child) {
-              return CompositedTransformFollower(
-                link: layerLink,
-                showWhenUnlinked: false,
-                offset: -renderRect.topLeft,
-                child: AnimatedOpacity(
-                  opacity: visible ? 1 : 0,
-                  duration: const Duration(milliseconds: 120),
-                  child: child,
+      builder: (_) => Stack(
+        children: [
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: dismissToolbar,
+              onLongPress: dismissToolbar,
+              child: const SizedBox.expand(),
+            ),
+          ),
+          CodeEditorTapRegion(
+            child: Directionality(
+              textDirection: Directionality.of(context),
+              child: ValueListenableBuilder<bool>(
+                valueListenable: visibility,
+                builder: (context, visible, child) {
+                  return CompositedTransformFollower(
+                    link: layerLink,
+                    showWhenUnlinked: false,
+                    offset: -renderRect.topLeft,
+                    child: AnimatedOpacity(
+                      opacity: visible ? 1 : 0,
+                      duration: const Duration(milliseconds: 120),
+                      child: child,
+                    ),
+                  );
+                },
+                child: builder(
+                  context: context,
+                  anchors: anchors,
+                  controller: controller,
+                  onDismiss: dismissToolbar,
+                  onRefresh: () => show(
+                    context: context,
+                    controller: controller,
+                    anchors: anchors,
+                    renderRect: renderRect,
+                    layerLink: layerLink,
+                    visibility: visibility,
+                  ),
                 ),
-              );
-            },
-            child: builder(
-              context: context,
-              anchors: anchors,
-              controller: controller,
-              onDismiss: () => hide(context),
-              onRefresh: () => show(
-                context: context,
-                controller: controller,
-                anchors: anchors,
-                renderRect: renderRect,
-                layerLink: layerLink,
-                visibility: visibility,
               ),
             ),
           ),
-        ),
+        ],
       ),
     );
     overlay.insert(entry);
     _entry = entry;
+    _visibility = visibility;
+    _visibilityListener = () {
+      if (!visibility.value) {
+        hide(context);
+      }
+    };
+    visibility.addListener(_visibilityListener!);
   }
 }
 

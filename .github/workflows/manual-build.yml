@@ -63,7 +63,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Cache Flutter SDK
+        id: cache-flutter-sdk
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/flutter-sdk
+          key: ${{ runner.os }}-flutter-sdk-${{ env.FLUTTER_VERSION }}
+
       - name: Install aria2
+        if: ${{ steps.cache-flutter-sdk.outputs.cache-hit != 'true' }}
         run: choco install aria2 --no-progress -y
 
       - name: Install Inno Setup
@@ -71,6 +79,7 @@ jobs:
         run: choco install innosetup --no-progress -y
 
       - name: Download Flutter SDK
+        if: ${{ steps.cache-flutter-sdk.outputs.cache-hit != 'true' }}
         shell: pwsh
         run: |
           $downloadDir = Join-Path $env:RUNNER_TEMP "downloads"
@@ -88,8 +97,16 @@ jobs:
             -DestinationPath $sdkDir `
             -Force
 
+      - name: Configure Flutter SDK path
+        shell: pwsh
+        run: |
+          $sdkDir = Join-Path $env:RUNNER_TEMP "flutter-sdk"
           $flutterBin = Join-Path $sdkDir "flutter\bin"
           $flutterRoot = Join-Path $sdkDir "flutter"
+
+          if (!(Test-Path (Join-Path $flutterBin "flutter.bat"))) {
+            throw "Flutter SDK was not found at $flutterRoot."
+          }
 
           $flutterBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           "FLUTTER_ROOT=$flutterRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
@@ -99,6 +116,14 @@ jobs:
 
       - name: Enable Windows desktop
         run: flutter config --enable-windows-desktop
+
+      - name: Cache Pub packages
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\Pub\Cache
+          key: ${{ runner.os }}-pub-${{ hashFiles('flutter/csac/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pub-
 
       - name: Get dependencies
         run: flutter pub get
@@ -180,7 +205,15 @@ jobs:
             file \
             wget
 
+      - name: Cache Flutter SDK
+        id: cache-flutter-sdk
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/flutter-sdk
+          key: ${{ runner.os }}-flutter-sdk-${{ env.FLUTTER_VERSION }}
+
       - name: Download Flutter SDK
+        if: ${{ steps.cache-flutter-sdk.outputs.cache-hit != 'true' }}
         run: |
           mkdir -p "$RUNNER_TEMP/flutter-sdk"
 
@@ -191,14 +224,30 @@ jobs:
           tar -xf flutter.tar.xz \
             -C "$RUNNER_TEMP/flutter-sdk"
 
-          echo "$RUNNER_TEMP/flutter-sdk/flutter/bin" >> "$GITHUB_PATH"
-          echo "FLUTTER_ROOT=$RUNNER_TEMP/flutter-sdk/flutter" >> "$GITHUB_ENV"
+      - name: Configure Flutter SDK path
+        run: |
+          flutter_root="$RUNNER_TEMP/flutter-sdk/flutter"
+          if [[ ! -x "$flutter_root/bin/flutter" ]]; then
+            echo "::error::Flutter SDK was not found at $flutter_root."
+            exit 1
+          fi
+
+          echo "$flutter_root/bin" >> "$GITHUB_PATH"
+          echo "FLUTTER_ROOT=$flutter_root" >> "$GITHUB_ENV"
 
       - name: Check Flutter
         run: flutter --version
 
       - name: Enable Linux desktop
         run: flutter config --enable-linux-desktop
+
+      - name: Cache Pub packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: ${{ runner.os }}-pub-${{ hashFiles('flutter/csac/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pub-
 
       - name: Get dependencies
         run: flutter pub get
@@ -225,6 +274,7 @@ jobs:
 
           BUNDLE_DIR="build/linux/x64/release/bundle"
           APPDIR="$RUNNER_TEMP/AppDir"
+          ICON_SOURCE="linux/runner/resources/app_icon.png"
 
           # Download appimagetool
           wget -q "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" \
@@ -232,6 +282,7 @@ jobs:
           chmod +x "$RUNNER_TEMP/appimagetool"
 
           # Prepare AppDir
+          rm -rf "$APPDIR"
           mkdir -p "$APPDIR/usr/bin"
           mkdir -p "$APPDIR/usr/lib"
           mkdir -p "$APPDIR/usr/share/applications"
@@ -244,21 +295,23 @@ jobs:
           ln -s "usr/bin/${APP_NAME}" "$APPDIR/AppRun"
 
           # Create desktop file
-          cat > "$APPDIR/usr/share/applications/${APP_NAME}.desktop" << EOF
+          cat > "$APPDIR/usr/share/applications/${APP_NAME}.desktop" <<EOF
           [Desktop Entry]
           Name=${APP_NAME}
           Exec=${APP_NAME}
           Type=Application
           Categories=Utility;
           Terminal=false
+          Icon=${APP_NAME}
           EOF
+          sed -i 's/^          //' "$APPDIR/usr/share/applications/${APP_NAME}.desktop"
 
-          # Copy icon if it exists
+          # Copy icon. AppImageKit expects Icon=... to resolve from AppDir root.
           if [[ -f "$APPDIR/usr/bin/data/flutter_assets/assets/icon.png" ]]; then
-            cp "$APPDIR/usr/bin/data/flutter_assets/assets/icon.png" \
-              "$APPDIR/usr/share/icons/hicolor/256x256/apps/${APP_NAME}.png"
-            echo "Icon=${APP_NAME}" >> "$APPDIR/usr/share/applications/${APP_NAME}.desktop"
+            ICON_SOURCE="$APPDIR/usr/bin/data/flutter_assets/assets/icon.png"
           fi
+          cp "$ICON_SOURCE" "$APPDIR/${APP_NAME}.png"
+          cp "$ICON_SOURCE" "$APPDIR/usr/share/icons/hicolor/256x256/apps/${APP_NAME}.png"
 
           # Create the AppDir directory for appimagetool
           cp "$APPDIR/usr/share/applications/${APP_NAME}.desktop" "$APPDIR/"
@@ -292,6 +345,27 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+          pub-cache: true
+
+      - name: Prepare CocoaPods cache directories
+        run: |
+          mkdir -p \
+            "$HOME/Library/Caches/CocoaPods" \
+            "$HOME/.cocoapods/repos" \
+            macos/Pods
+
+      - name: Cache CocoaPods
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/CocoaPods
+            ~/.cocoapods/repos
+            flutter/csac/macos/Pods
+          key: ${{ runner.os }}-macos-cocoapods-${{ hashFiles('flutter/csac/pubspec.lock', 'flutter/csac/macos/Podfile', 'flutter/csac/macos/Podfile.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-macos-cocoapods-
+            ${{ runner.os }}-cocoapods-
 
       - name: Check Flutter
         run: flutter --version
@@ -392,13 +466,27 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+          cache: gradle
+          cache-dependency-path: |
+            flutter/csac/android/**/*.gradle*
+            flutter/csac/android/**/gradle-wrapper.properties
+            flutter/csac/pubspec.lock
+
+      - name: Cache Flutter SDK
+        id: cache-flutter-sdk
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/flutter-sdk
+          key: ${{ runner.os }}-flutter-sdk-${{ env.FLUTTER_VERSION }}
 
       - name: Install aria2
+        if: ${{ steps.cache-flutter-sdk.outputs.cache-hit != 'true' }}
         run: |
           sudo apt-get update
           sudo apt-get install -y aria2
 
       - name: Download Flutter SDK
+        if: ${{ steps.cache-flutter-sdk.outputs.cache-hit != 'true' }}
         run: |
           mkdir -p "$RUNNER_TEMP/flutter-sdk"
 
@@ -409,11 +497,27 @@ jobs:
           tar -xf flutter.tar.xz \
             -C "$RUNNER_TEMP/flutter-sdk"
 
-          echo "$RUNNER_TEMP/flutter-sdk/flutter/bin" >> "$GITHUB_PATH"
-          echo "FLUTTER_ROOT=$RUNNER_TEMP/flutter-sdk/flutter" >> "$GITHUB_ENV"
+      - name: Configure Flutter SDK path
+        run: |
+          flutter_root="$RUNNER_TEMP/flutter-sdk/flutter"
+          if [[ ! -x "$flutter_root/bin/flutter" ]]; then
+            echo "::error::Flutter SDK was not found at $flutter_root."
+            exit 1
+          fi
+
+          echo "$flutter_root/bin" >> "$GITHUB_PATH"
+          echo "FLUTTER_ROOT=$flutter_root" >> "$GITHUB_ENV"
 
       - name: Check Flutter
         run: flutter --version
+
+      - name: Cache Pub packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: ${{ runner.os }}-pub-${{ hashFiles('flutter/csac/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pub-
 
       - name: Get dependencies
         run: flutter pub get
@@ -510,6 +614,27 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+          pub-cache: true
+
+      - name: Prepare CocoaPods cache directories
+        run: |
+          mkdir -p \
+            "$HOME/Library/Caches/CocoaPods" \
+            "$HOME/.cocoapods/repos" \
+            flutter/csac/ios/Pods
+
+      - name: Cache CocoaPods
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/CocoaPods
+            ~/.cocoapods/repos
+            flutter/csac/ios/Pods
+          key: ${{ runner.os }}-ios-cocoapods-${{ hashFiles('flutter/csac/pubspec.lock', 'flutter/csac/ios/Podfile', 'flutter/csac/ios/Podfile.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-ios-cocoapods-
+            ${{ runner.os }}-cocoapods-
 
       - name: Check Flutter
         run: |
@@ -572,6 +697,8 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+          pub-cache: true
 
       - name: Check Flutter
         run: flutter --version
