@@ -15,6 +15,7 @@ on:
           - linux-executable
           - linux-appimage
           - macos
+          - macos-dmg
           - android-apk
           - ios
           - ios-unsigned-ipa
@@ -23,6 +24,12 @@ on:
       upload_release:
         description: Upload built artifacts to GitHub Release
         required: true
+        default: false
+        type: boolean
+
+      prerelease:
+        description: Mark as pre-release
+        required: false
         default: false
         type: boolean
 
@@ -169,7 +176,9 @@ jobs:
             ninja-build \
             pkg-config \
             liblzma-dev \
-            libfuse2
+            libfuse2 \
+            file \
+            wget
 
       - name: Download Flutter SDK
         run: |
@@ -209,9 +218,66 @@ jobs:
           name: ${{ env.APP_NAME }}-linux
           path: flutter/csac/build/linux/x64/release/bundle
 
+      - name: Build Linux AppImage
+        if: ${{ github.event.inputs.artifact == 'all' || github.event.inputs.artifact == 'linux-appimage' }}
+        run: |
+          set -euo pipefail
+
+          BUNDLE_DIR="build/linux/x64/release/bundle"
+          APPDIR="$RUNNER_TEMP/AppDir"
+
+          # Download appimagetool
+          wget -q "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" \
+            -O "$RUNNER_TEMP/appimagetool"
+          chmod +x "$RUNNER_TEMP/appimagetool"
+
+          # Prepare AppDir
+          mkdir -p "$APPDIR/usr/bin"
+          mkdir -p "$APPDIR/usr/lib"
+          mkdir -p "$APPDIR/usr/share/applications"
+          mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/apps"
+
+          # Copy bundle contents
+          cp -a "$BUNDLE_DIR"/* "$APPDIR/usr/bin/"
+
+          # Create symlink for AppRun
+          ln -s "usr/bin/${APP_NAME}" "$APPDIR/AppRun"
+
+          # Create desktop file
+          cat > "$APPDIR/usr/share/applications/${APP_NAME}.desktop" << EOF
+          [Desktop Entry]
+          Name=${APP_NAME}
+          Exec=${APP_NAME}
+          Type=Application
+          Categories=Utility;
+          Terminal=false
+          EOF
+
+          # Copy icon if it exists
+          if [[ -f "$APPDIR/usr/bin/data/flutter_assets/assets/icon.png" ]]; then
+            cp "$APPDIR/usr/bin/data/flutter_assets/assets/icon.png" \
+              "$APPDIR/usr/share/icons/hicolor/256x256/apps/${APP_NAME}.png"
+            echo "Icon=${APP_NAME}" >> "$APPDIR/usr/share/applications/${APP_NAME}.desktop"
+          fi
+
+          # Create the AppDir directory for appimagetool
+          cp "$APPDIR/usr/share/applications/${APP_NAME}.desktop" "$APPDIR/"
+
+          # Build AppImage
+          mkdir -p build/linux/appimage
+          "$RUNNER_TEMP/appimagetool" "$APPDIR" \
+            "build/linux/appimage/${APP_NAME}-${APP_BUILD_NAME}-x86_64.AppImage"
+
+      - name: Upload Linux AppImage
+        if: ${{ github.event.inputs.artifact == 'all' || github.event.inputs.artifact == 'linux-appimage' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_NAME }}-linux-appimage
+          path: flutter/csac/build/linux/appimage/*.AppImage
+
   macos:
     name: macOS
-    if: ${{ github.event.inputs.artifact == 'all' || github.event.inputs.artifact == 'macos' }}
+    if: ${{ github.event.inputs.artifact == 'all' || github.event.inputs.artifact == 'macos' || github.event.inputs.artifact == 'macos-dmg' }}
     runs-on: macos-latest
 
     defaults:
@@ -272,6 +338,41 @@ jobs:
         with:
           name: ${{ env.APP_NAME }}-macos
           path: flutter/csac/build/macos/package/${{ env.APP_NAME }}-macos.zip
+
+      - name: Build macOS DMG
+        if: ${{ github.event.inputs.artifact == 'all' || github.event.inputs.artifact == 'macos-dmg' }}
+        run: |
+          set -euo pipefail
+
+          app_path="build/macos/Build/Products/Release/${APP_NAME}.app"
+          dmg_path="build/macos/package/${APP_NAME}-${APP_BUILD_NAME}-macos.dmg"
+
+          mkdir -p build/macos/package
+
+          # Create a temporary directory for DMG contents
+          DMG_DIR="$RUNNER_TEMP/dmg_contents"
+          mkdir -p "$DMG_DIR"
+
+          # Copy app bundle
+          cp -R "$app_path" "$DMG_DIR/"
+
+          # Create symbolic link to /Applications
+          ln -s /Applications "$DMG_DIR/Applications"
+
+          # Create the DMG
+          hdiutil create -volname "${APP_NAME}" \
+            -srcfolder "$DMG_DIR" \
+            -ov -format UDZO \
+            "$dmg_path"
+
+          echo "DMG created at $dmg_path"
+
+      - name: Upload macOS DMG
+        if: ${{ github.event.inputs.artifact == 'all' || github.event.inputs.artifact == 'macos-dmg' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_NAME }}-macos-dmg
+          path: flutter/csac/build/macos/package/${{ env.APP_NAME }}-*-macos.dmg
 
   android:
     name: Android
@@ -555,10 +656,22 @@ jobs:
             )
           fi
 
+          if compgen -G "release-assets/${APP_NAME}-linux-appimage/*.AppImage" > /dev/null; then
+            cp \
+              release-assets/${APP_NAME}-linux-appimage/*.AppImage \
+              "release-upload/${APP_NAME}-${version}-linux-x86_64.AppImage"
+          fi
+
           if [[ -f release-assets/${APP_NAME}-macos/${APP_NAME}-macos.zip ]]; then
             cp \
               "release-assets/${APP_NAME}-macos/${APP_NAME}-macos.zip" \
               "release-upload/${APP_NAME}-${version}-macos-universal.zip"
+          fi
+
+          if compgen -G "release-assets/${APP_NAME}-macos-dmg/*.dmg" > /dev/null; then
+            cp \
+              release-assets/${APP_NAME}-macos-dmg/*.dmg \
+              "release-upload/${APP_NAME}-${version}-macos-universal.dmg"
           fi
 
           shopt -s nullglob
@@ -610,3 +723,4 @@ jobs:
           tag_name: ${{ steps.version.outputs.tag }}
           body_path: release-body.md
           files: release-upload/*
+          prerelease: ${{ github.event.inputs.prerelease }}
