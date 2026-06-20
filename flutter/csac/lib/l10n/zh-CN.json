@@ -1149,5 +1149,19 @@
   "Confirm sending message": "确认发送消息",
   "Send to {name}?": "发送给 {name}？",
   "Open chat with draft": "打开聊天并填入草稿",
-  "Use draft to prefill the chat input. Add send=confirm to ask before sending.": "使用 draft 预填聊天输入框。添加 send=confirm 可在发送前确认。"
+  "Use draft to prefill the chat input. Add send=confirm to ask before sending.": "使用 draft 预填聊天输入框。添加 send=confirm 可在发送前确认。",
+  "Global search": "全局搜索",
+  "Search this conversation": "搜索此会话",
+  "Search messages, chats, posts and users": "搜索消息、会话、动态和用户",
+  "Type to search messages, chats, posts or users.": "输入关键词搜索消息、会话、动态或用户。",
+  "No matching results.": "没有匹配的结果。",
+  "Filters": "筛选",
+  "Links": "链接",
+  "Conversations": "会话",
+  "Users": "用户",
+  "Sender nickname or UID": "发送者昵称或 UID",
+  "Any time": "任意时间",
+  "Last 7 days": "最近 7 天",
+  "Last 30 days": "最近 30 天",
+  "Limited to {name}": "已限定到 {name}"
 }

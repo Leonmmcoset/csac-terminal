@@ -1965,17 +1965,44 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
   }
 }
 
+enum _SearchTab { all, messages, conversations, space, users }
+
+class _SpaceSearchResult {
+  const _SpaceSearchResult({required this.post, required this.snippet});
+
+  final SpacePost post;
+  final String snippet;
+}
+
+class _UserSearchResult {
+  const _UserSearchResult({
+    required this.uid,
+    required this.name,
+    this.avatar = '',
+    this.subtitle = '',
+    this.conversation,
+  });
+
+  final int uid;
+  final String name;
+  final String avatar;
+  final String subtitle;
+  final Conversation? conversation;
+}
+
 class MessageSearchScreen extends StatefulWidget {
   const MessageSearchScreen({
     super.key,
     required this.state,
     this.embedded = false,
     this.initialQuery = '',
+    this.conversation,
   });
 
   final CsacAppState state;
   final bool embedded;
   final String initialQuery;
+  final Conversation? conversation;
 
   @override
   State<MessageSearchScreen> createState() => _MessageSearchScreenState();
@@ -1983,16 +2010,41 @@ class MessageSearchScreen extends StatefulWidget {
 
 class _MessageSearchScreenState extends State<MessageSearchScreen> {
   final search = TextEditingController();
+  final sender = TextEditingController();
   SearchScope scope = SearchScope.all;
+  _SearchTab tab = _SearchTab.all;
+  MessageSearchDateRange dateRange = MessageSearchDateRange.any;
   List<MessageSearchResult> results = const <MessageSearchResult>[];
+  List<Conversation> conversationResults = const <Conversation>[];
+  List<_SpaceSearchResult> spaceResults = const <_SpaceSearchResult>[];
+  List<_UserSearchResult> userResults = const <_UserSearchResult>[];
   bool loading = false;
+  bool filtersExpanded = false;
   String? error;
   Timer? debounce;
+
+  bool get scopedToConversation => widget.conversation != null;
+
+  bool get filterOnlySearch =>
+      scope == SearchScope.image ||
+      scope == SearchScope.link ||
+      scope == SearchScope.code ||
+      scope == SearchScope.essence ||
+      sender.text.trim().isNotEmpty ||
+      dateRange != MessageSearchDateRange.any ||
+      scopedToConversation;
+
+  int get totalCount =>
+      results.length +
+      conversationResults.length +
+      spaceResults.length +
+      userResults.length;
 
   @override
   void initState() {
     super.initState();
     search.text = widget.initialQuery.trim();
+    sender.addListener(scheduleSearch);
     runSearch();
   }
 
@@ -2005,12 +2057,17 @@ class _MessageSearchScreenState extends State<MessageSearchScreen> {
       search.text = nextQuery;
       runSearch();
     }
+    if (widget.conversation?.id != oldWidget.conversation?.id ||
+        widget.conversation?.type != oldWidget.conversation?.type) {
+      runSearch();
+    }
   }
 
   @override
   void dispose() {
     debounce?.cancel();
     search.dispose();
+    sender.dispose();
     super.dispose();
   }
 
@@ -2022,11 +2079,12 @@ class _MessageSearchScreenState extends State<MessageSearchScreen> {
   Future<void> runSearch() async {
     setState(() {});
     final query = search.text.trim();
-    if (query.isEmpty &&
-        scope != SearchScope.image &&
-        scope != SearchScope.essence) {
+    if (query.isEmpty && !filterOnlySearch) {
       setState(() {
         results = const <MessageSearchResult>[];
+        conversationResults = const <Conversation>[];
+        spaceResults = const <_SpaceSearchResult>[];
+        userResults = const <_UserSearchResult>[];
         loading = false;
         error = null;
       });
@@ -2037,11 +2095,35 @@ class _MessageSearchScreenState extends State<MessageSearchScreen> {
       error = null;
     });
     try {
-      final loaded = await widget.state.searchMessages(query, scope);
+      final filter = MessageSearchFilter(
+        scope: scope,
+        conversation: widget.conversation,
+        senderQuery: sender.text,
+        dateRange: dateRange,
+      );
+      final loaded = await widget.state.searchMessages(
+        query,
+        scope,
+        filter: filter,
+      );
+      final loadedConversations = scopedToConversation
+          ? const <Conversation>[]
+          : searchConversations(query);
+      final loadedUsers = scopedToConversation
+          ? const <_UserSearchResult>[]
+          : await searchUsers(query, loadedConversations);
+      final loadedSpace = scopedToConversation
+          ? const <_SpaceSearchResult>[]
+          : await searchSpacePosts(query);
       if (!mounted) {
         return;
       }
-      setState(() => results = loaded);
+      setState(() {
+        results = loaded;
+        conversationResults = loadedConversations;
+        userResults = loadedUsers;
+        spaceResults = loadedSpace;
+      });
     } catch (err) {
       if (!mounted) {
         return;
@@ -2059,6 +2141,164 @@ class _MessageSearchScreenState extends State<MessageSearchScreen> {
     runSearch();
   }
 
+  void setDateRange(MessageSearchDateRange value) {
+    setState(() => dateRange = value);
+    runSearch();
+  }
+
+  void setTab(_SearchTab value) {
+    setState(() => tab = value);
+  }
+
+  List<Conversation> searchConversations(String rawQuery) {
+    final query = rawQuery.trim().toLowerCase();
+    if (query.isEmpty) {
+      return const <Conversation>[];
+    }
+    return widget.state.conversations
+        .where((conversation) {
+          final target = [
+            conversation.name,
+            conversation.subtitle,
+            conversation.statusSubtitle,
+            conversation.lastMessagePreview,
+            conversation.searchText,
+            '${conversation.id}',
+          ].join(' ').toLowerCase();
+          return target.contains(query);
+        })
+        .take(30)
+        .toList();
+  }
+
+  Future<List<_UserSearchResult>> searchUsers(
+    String rawQuery,
+    List<Conversation> conversations,
+  ) async {
+    final query = rawQuery.trim().toLowerCase();
+    if (query.isEmpty) {
+      return const <_UserSearchResult>[];
+    }
+    final found = <_UserSearchResult>[];
+    final seen = <int>{};
+    for (final conversation in conversations) {
+      if (conversation.type != ConversationType.private ||
+          !seen.add(conversation.id)) {
+        continue;
+      }
+      found.add(
+        _UserSearchResult(
+          uid: conversation.id,
+          name: conversation.name,
+          avatar: conversation.avatar,
+          subtitle: conversation.subtitle.isEmpty
+              ? 'UID ${conversation.id}'
+              : conversation.subtitle,
+          conversation: conversation,
+        ),
+      );
+    }
+    final uid = int.tryParse(query);
+    if (uid != null && uid > 0 && !seen.contains(uid)) {
+      final uidSubtitle = context.strings.text('Open user profile by UID');
+      try {
+        final profile = await widget.state.loadUserProfile(uid);
+        found.insert(
+          0,
+          _UserSearchResult(
+            uid: profile.uid,
+            name: profile.displayName,
+            avatar: profile.avatar,
+            subtitle: profile.subtitle.isEmpty
+                ? 'UID ${profile.uid}'
+                : profile.subtitle,
+          ),
+        );
+      } catch (_) {
+        found.insert(
+          0,
+          _UserSearchResult(uid: uid, name: 'UID $uid', subtitle: uidSubtitle),
+        );
+      }
+    }
+    return found.take(30).toList();
+  }
+
+  Future<List<_SpaceSearchResult>> searchSpacePosts(String rawQuery) async {
+    final query = rawQuery.trim().toLowerCase();
+    if (query.isEmpty) {
+      return const <_SpaceSearchResult>[];
+    }
+    final found = <_SpaceSearchResult>[];
+    const pageSize = 30;
+    for (var page = 1; page <= 3 && found.length < 30; page++) {
+      final loaded = await widget.state.client.spacePosts(
+        page: page,
+        pageSize: pageSize,
+      );
+      if (loaded.posts.isEmpty) {
+        break;
+      }
+      for (final post in loaded.posts) {
+        if (spacePostMatches(post, query)) {
+          found.add(
+            _SpaceSearchResult(
+              post: post,
+              snippet: spacePostSnippet(post, rawQuery),
+            ),
+          );
+          if (found.length >= 30) {
+            break;
+          }
+        }
+      }
+      if (loaded.posts.length < pageSize) {
+        break;
+      }
+    }
+    return found;
+  }
+
+  bool spacePostMatches(SpacePost post, String query) {
+    final target = [
+      post.displayName,
+      post.content,
+      post.createdAt,
+      '${post.senderUid}',
+      '${post.id}',
+      for (final reply in post.replies) reply.displayName,
+      for (final reply in post.replies) reply.content,
+    ].join(' ').toLowerCase();
+    return target.contains(query);
+  }
+
+  String spacePostSnippet(SpacePost post, String query) {
+    final source = post.content.trim().isNotEmpty
+        ? post.content.trim()
+        : post.images.isNotEmpty
+        ? context.strings.text('Images')
+        : post.displayName;
+    return searchSnippet(source, query);
+  }
+
+  String searchSnippet(String text, String query, {int max = 120}) {
+    final body = text.trim();
+    if (body.isEmpty) {
+      return context.strings.text('(empty)');
+    }
+    final needle = query.trim().toLowerCase();
+    if (needle.isEmpty) {
+      return body.length <= max ? body : '${body.substring(0, max)}...';
+    }
+    final index = body.toLowerCase().indexOf(needle);
+    if (index < 0) {
+      return body.length <= max ? body : '${body.substring(0, max)}...';
+    }
+    final start = (index - 36).clamp(0, body.length);
+    final end = (index + needle.length + 72).clamp(0, body.length);
+    return '${start > 0 ? '...' : ''}${body.substring(start, end)}${end < body.length ? '...' : ''}';
+  }
+
   Future<void> openResult(MessageSearchResult result) {
     return Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -2069,6 +2309,46 @@ class _MessageSearchScreenState extends State<MessageSearchScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> openConversationResult(Conversation conversation) async {
+    await widget.state.markConversationRead(conversation);
+    widget.state.setActiveConversation(conversation);
+    if (!mounted) {
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            ChatScreen(state: widget.state, conversation: conversation),
+      ),
+    );
+  }
+
+  Future<void> openSpaceResult(_SpaceSearchResult result) {
+    return Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            SpaceFeedScreen(state: widget.state, focusPostId: result.post.id),
+      ),
+    );
+  }
+
+  Future<void> openUserResult(_UserSearchResult result) async {
+    final conversation = result.conversation;
+    if (conversation != null) {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => UserProfileScreen(
+            state: widget.state,
+            uid: result.uid,
+            avatarHeroTag: conversationAvatarHeroTag(conversation),
+          ),
+        ),
+      );
+      return;
+    }
+    await openUserProfile(context, widget.state, result.uid);
   }
 
   Future<void> openResultQr(MessageSearchResult result) {
@@ -2107,6 +2387,7 @@ class _MessageSearchScreenState extends State<MessageSearchScreen> {
   @override
   Widget build(BuildContext context) {
     final strings = context.strings;
+    final visibleResults = visibleResultWidgets(strings);
     final body = Column(
       children: [
         Padding(
@@ -2115,12 +2396,26 @@ class _MessageSearchScreenState extends State<MessageSearchScreen> {
             controller: search,
             onChanged: (_) => scheduleSearch(),
             autofocus: !widget.embedded,
+            textInputAction: TextInputAction.search,
+            onSubmitted: (_) => runSearch(),
             decoration: InputDecoration(
-              hintText: strings.text('Search cached messages'),
+              hintText: scopedToConversation
+                  ? strings.text('Search this conversation')
+                  : strings.text('Search messages, chats, posts and users'),
               prefixIcon: const Icon(Icons.search),
-              suffixIcon: search.text.trim().isEmpty
-                  ? null
-                  : IconButton(
+              suffixIcon: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    tooltip: strings.text('Filters'),
+                    onPressed: () =>
+                        setState(() => filtersExpanded = !filtersExpanded),
+                    icon: Icon(
+                      filtersExpanded ? Icons.tune : Icons.tune_outlined,
+                    ),
+                  ),
+                  if (search.text.trim().isNotEmpty)
+                    IconButton(
                       tooltip: strings.text('Clear'),
                       onPressed: () {
                         search.clear();
@@ -2128,10 +2423,17 @@ class _MessageSearchScreenState extends State<MessageSearchScreen> {
                       },
                       icon: const Icon(Icons.close),
                     ),
+                ],
+              ),
               border: const OutlineInputBorder(),
             ),
           ),
         ),
+        if (scopedToConversation)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: _SearchScopeBanner(conversation: widget.conversation!),
+          ),
         SizedBox(
           height: 46,
           child: ListView(
@@ -2159,10 +2461,74 @@ class _MessageSearchScreenState extends State<MessageSearchScreen> {
                 onSelected: () => setScope(SearchScope.image),
               ),
               _ScopeChip(
+                label: strings.text('Links'),
+                selected: scope == SearchScope.link,
+                onSelected: () => setScope(SearchScope.link),
+              ),
+              _ScopeChip(
+                label: strings.text('Code'),
+                selected: scope == SearchScope.code,
+                onSelected: () => setScope(SearchScope.code),
+              ),
+              _ScopeChip(
                 label: strings.text('Essence'),
                 selected: scope == SearchScope.essence,
                 onSelected: () => setScope(SearchScope.essence),
               ),
+            ],
+          ),
+        ),
+        AnimatedCrossFade(
+          firstChild: const SizedBox.shrink(),
+          secondChild: _SearchFiltersPanel(
+            sender: sender,
+            dateRange: dateRange,
+            onDateRangeChanged: setDateRange,
+            onApply: runSearch,
+          ),
+          crossFadeState: filtersExpanded
+              ? CrossFadeState.showSecond
+              : CrossFadeState.showFirst,
+          duration: const Duration(milliseconds: 180),
+        ),
+        SizedBox(
+          height: 48,
+          child: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            scrollDirection: Axis.horizontal,
+            children: [
+              _SearchTabChip(
+                label: strings.text('All'),
+                count: totalCount,
+                selected: tab == _SearchTab.all,
+                onSelected: () => setTab(_SearchTab.all),
+              ),
+              _SearchTabChip(
+                label: strings.text('Messages'),
+                count: results.length,
+                selected: tab == _SearchTab.messages,
+                onSelected: () => setTab(_SearchTab.messages),
+              ),
+              if (!scopedToConversation) ...[
+                _SearchTabChip(
+                  label: strings.text('Conversations'),
+                  count: conversationResults.length,
+                  selected: tab == _SearchTab.conversations,
+                  onSelected: () => setTab(_SearchTab.conversations),
+                ),
+                _SearchTabChip(
+                  label: strings.text('Space'),
+                  count: spaceResults.length,
+                  selected: tab == _SearchTab.space,
+                  onSelected: () => setTab(_SearchTab.space),
+                ),
+                _SearchTabChip(
+                  label: strings.text('Users'),
+                  count: userResults.length,
+                  selected: tab == _SearchTab.users,
+                  onSelected: () => setTab(_SearchTab.users),
+                ),
+              ],
             ],
           ),
         ),
@@ -2178,30 +2544,17 @@ class _MessageSearchScreenState extends State<MessageSearchScreen> {
             ],
           ),
         Expanded(
-          child: results.isEmpty
+          child: visibleResults.isEmpty
               ? _EmptyPanel(
-                  message:
-                      search.text.trim().isEmpty &&
-                          scope != SearchScope.image &&
-                          scope != SearchScope.essence
-                      ? strings.text('Type to search cached messages.')
-                      : strings.text('No matching messages.'),
+                  message: search.text.trim().isEmpty && !filterOnlySearch
+                      ? strings.text(
+                          'Type to search messages, chats, posts or users.',
+                        )
+                      : strings.text('No matching results.'),
                 )
-              : ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(12, 6, 12, 18),
-                  itemCount: results.length,
-                  itemBuilder: (context, index) {
-                    final result = results[index];
-                    return _MotionListItem(
-                      index: index,
-                      child: _SearchResultTile(
-                        result: result,
-                        preferences: widget.state.preferences,
-                        onTap: () => openResult(result),
-                        onShareQr: () => openResultQr(result),
-                      ),
-                    );
-                  },
+              : ListView(
+                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 18),
+                  children: visibleResults,
                 ),
         ),
       ],
@@ -2209,8 +2562,247 @@ class _MessageSearchScreenState extends State<MessageSearchScreen> {
     return Scaffold(
       appBar: widget.embedded
           ? null
-          : AppBar(title: Text(strings.text('Search messages'))),
+          : AppBar(
+              title: Text(
+                scopedToConversation
+                    ? strings.text('Search this conversation')
+                    : strings.text('Global search'),
+              ),
+            ),
       body: SafeArea(top: widget.embedded, child: body),
+    );
+  }
+
+  List<Widget> visibleResultWidgets(CsacStrings strings) {
+    final widgets = <Widget>[];
+    void addSection(String title, int count, List<Widget> children) {
+      if (children.isEmpty) {
+        return;
+      }
+      widgets.add(_SearchSectionHeader(title: title, count: count));
+      widgets.addAll(children);
+    }
+
+    if (tab == _SearchTab.all || tab == _SearchTab.messages) {
+      addSection(strings.text('Messages'), results.length, [
+        for (var i = 0; i < results.length; i++)
+          _MotionListItem(
+            index: i,
+            child: _SearchResultTile(
+              result: results[i],
+              preferences: widget.state.preferences,
+              onTap: () => openResult(results[i]),
+              onShareQr: () => openResultQr(results[i]),
+            ),
+          ),
+      ]);
+    }
+    if (tab == _SearchTab.all || tab == _SearchTab.conversations) {
+      addSection(strings.text('Conversations'), conversationResults.length, [
+        for (var i = 0; i < conversationResults.length; i++)
+          _MotionListItem(
+            index: i,
+            child: _ConversationSearchTile(
+              conversation: conversationResults[i],
+              onTap: () => openConversationResult(conversationResults[i]),
+            ),
+          ),
+      ]);
+    }
+    if (tab == _SearchTab.all || tab == _SearchTab.space) {
+      addSection(strings.text('Space'), spaceResults.length, [
+        for (var i = 0; i < spaceResults.length; i++)
+          _MotionListItem(
+            index: i,
+            child: _SpaceSearchTile(
+              result: spaceResults[i],
+              onTap: () => openSpaceResult(spaceResults[i]),
+            ),
+          ),
+      ]);
+    }
+    if (tab == _SearchTab.all || tab == _SearchTab.users) {
+      addSection(strings.text('Users'), userResults.length, [
+        for (var i = 0; i < userResults.length; i++)
+          _MotionListItem(
+            index: i,
+            child: _UserSearchTile(
+              result: userResults[i],
+              onTap: () => openUserResult(userResults[i]),
+            ),
+          ),
+      ]);
+    }
+    return widgets;
+  }
+}
+
+class _SearchScopeBanner extends StatelessWidget {
+  const _SearchScopeBanner({required this.conversation});
+
+  final Conversation conversation;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.secondaryContainer.withValues(alpha: 0.62),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(
+          children: [
+            Icon(Icons.filter_alt_outlined, color: colors.onSecondaryContainer),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                context.strings.format('Limited to {name}', {
+                  'name': conversation.name,
+                }),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: colors.onSecondaryContainer,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SearchFiltersPanel extends StatelessWidget {
+  const _SearchFiltersPanel({
+    required this.sender,
+    required this.dateRange,
+    required this.onDateRangeChanged,
+    required this.onApply,
+  });
+
+  final TextEditingController sender;
+  final MessageSearchDateRange dateRange;
+  final ValueChanged<MessageSearchDateRange> onDateRangeChanged;
+  final VoidCallback onApply;
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: sender,
+            textInputAction: TextInputAction.search,
+            onSubmitted: (_) => onApply(),
+            decoration: InputDecoration(
+              labelText: strings.text('Sender nickname or UID'),
+              prefixIcon: const Icon(Icons.person_search_outlined),
+              border: const OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 42,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: [
+                _ScopeChip(
+                  label: strings.text('Any time'),
+                  selected: dateRange == MessageSearchDateRange.any,
+                  onSelected: () =>
+                      onDateRangeChanged(MessageSearchDateRange.any),
+                ),
+                _ScopeChip(
+                  label: strings.text('Today'),
+                  selected: dateRange == MessageSearchDateRange.today,
+                  onSelected: () =>
+                      onDateRangeChanged(MessageSearchDateRange.today),
+                ),
+                _ScopeChip(
+                  label: strings.text('Last 7 days'),
+                  selected: dateRange == MessageSearchDateRange.sevenDays,
+                  onSelected: () =>
+                      onDateRangeChanged(MessageSearchDateRange.sevenDays),
+                ),
+                _ScopeChip(
+                  label: strings.text('Last 30 days'),
+                  selected: dateRange == MessageSearchDateRange.thirtyDays,
+                  onSelected: () =>
+                      onDateRangeChanged(MessageSearchDateRange.thirtyDays),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SearchTabChip extends StatelessWidget {
+  const _SearchTabChip({
+    required this.label,
+    required this.count,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final String label;
+  final int count;
+  final bool selected;
+  final VoidCallback onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ChoiceChip(
+        label: Text('$label ($count)'),
+        selected: selected,
+        onSelected: (_) => onSelected(),
+      ),
+    );
+  }
+}
+
+class _SearchSectionHeader extends StatelessWidget {
+  const _SearchSectionHeader({required this.title, required this.count});
+
+  final String title;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 14, 4, 6),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: colors.onSurface,
+              ),
+            ),
+          ),
+          Text(
+            '$count',
+            style: TextStyle(
+              color: colors.onSurfaceVariant,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -2234,6 +2826,131 @@ class _ScopeChip extends StatelessWidget {
         label: Text(label),
         selected: selected,
         onSelected: (_) => onSelected(),
+      ),
+    );
+  }
+}
+
+class _ConversationSearchTile extends StatelessWidget {
+  const _ConversationSearchTile({
+    required this.conversation,
+    required this.onTap,
+  });
+
+  final Conversation conversation;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.symmetric(vertical: 5),
+      child: _RoundedInkClip(
+        child: ListTile(
+          onTap: onTap,
+          leading: _ConversationAvatarHero(
+            conversation: conversation,
+            enabled: false,
+          ),
+          title: Text(
+            conversation.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: Text(
+            [
+              conversation.type == ConversationType.group
+                  ? context.strings.text('Group chat')
+                  : context.strings.text('Private chat'),
+              conversation.lastMessagePreview,
+              conversation.subtitle,
+            ].where((part) => part.trim().isNotEmpty).join(' | '),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: const Icon(Icons.chevron_right),
+        ),
+      ),
+    );
+  }
+}
+
+class _SpaceSearchTile extends StatelessWidget {
+  const _SpaceSearchTile({required this.result, required this.onTap});
+
+  final _SpaceSearchResult result;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final post = result.post;
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.symmetric(vertical: 5),
+      child: _RoundedInkClip(
+        child: ListTile(
+          onTap: onTap,
+          leading: _Avatar(url: post.avatar, fallback: Icons.dynamic_feed),
+          title: Text(
+            post.displayName,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                [
+                  context.strings.format('Post #{id}', {'id': post.id}),
+                  post.createdAt,
+                ].where((part) => part.trim().isNotEmpty).join(' | '),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 2),
+              Text(
+                result.snippet,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+          trailing: post.images.isNotEmpty
+              ? const Icon(Icons.image_outlined)
+              : const Icon(Icons.chevron_right),
+        ),
+      ),
+    );
+  }
+}
+
+class _UserSearchTile extends StatelessWidget {
+  const _UserSearchTile({required this.result, required this.onTap});
+
+  final _UserSearchResult result;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.symmetric(vertical: 5),
+      child: _RoundedInkClip(
+        child: ListTile(
+          onTap: onTap,
+          leading: _Avatar(url: result.avatar, fallback: Icons.person_rounded),
+          title: Text(
+            result.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: Text(
+            result.subtitle.isEmpty ? 'UID ${result.uid}' : result.subtitle,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: const Icon(Icons.chevron_right),
+        ),
       ),
     );
   }

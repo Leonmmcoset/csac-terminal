@@ -383,24 +383,55 @@ class CsacLocalCache {
   Future<List<MessageSearchResult>> searchMessages(
     String query,
     SearchScope scope, {
+    MessageSearchFilter? filter,
     int limit = 80,
   }) async {
     final text = query.trim();
+    final effectiveFilter = filter ?? MessageSearchFilter(scope: scope);
+    final effectiveScope = effectiveFilter.scope;
     if (text.isEmpty &&
-        scope != SearchScope.image &&
-        scope != SearchScope.essence) {
+        effectiveScope != SearchScope.image &&
+        effectiveScope != SearchScope.link &&
+        effectiveScope != SearchScope.code &&
+        effectiveScope != SearchScope.essence) {
       return const <MessageSearchResult>[];
     }
     final where = <String>[];
     final params = <Object?>[];
     if (text.isNotEmpty) {
-      where.add(r"(m.body LIKE ? ESCAPE '\' OR m.sender LIKE ? ESCAPE '\')");
+      where.add(
+        r"(m.body LIKE ? ESCAPE '\' OR m.sender LIKE ? ESCAPE '\' OR "
+        r"m.file_name LIKE ? ESCAPE '\' OR c.name LIKE ? ESCAPE '\')",
+      );
       final like = '%${_escapeLike(text)}%';
       params
         ..add(like)
+        ..add(like)
+        ..add(like)
         ..add(like);
     }
-    switch (scope) {
+    final conversation = effectiveFilter.conversation;
+    if (conversation != null) {
+      where.add('m.conversation_type = ? AND m.conversation_id = ?');
+      params
+        ..add(_conversationTypeName(conversation.type))
+        ..add(conversation.id);
+    }
+    final senderText = effectiveFilter.senderQuery.trim();
+    if (senderText.isNotEmpty) {
+      final senderUid = int.tryParse(senderText);
+      if (senderUid != null && senderUid > 0) {
+        where.add(r"(m.sender_id = ? OR m.sender LIKE ? ESCAPE '\')");
+        params
+          ..add(senderUid)
+          ..add('%${_escapeLike(senderText)}%');
+      } else {
+        where.add(r"m.sender LIKE ? ESCAPE '\'");
+        params.add('%${_escapeLike(senderText)}%');
+      }
+    }
+    final minTime = _minimumSearchTimestamp(effectiveFilter.dateRange);
+    switch (effectiveScope) {
       case SearchScope.private:
         where.add("m.conversation_type = 'private'");
         break;
@@ -409,6 +440,18 @@ class CsacLocalCache {
         break;
       case SearchScope.image:
         where.add("m.image_url <> ''");
+        break;
+      case SearchScope.link:
+        where.add(
+          r"(m.body LIKE '%http://%' OR m.body LIKE '%https://%' OR "
+          r"m.body LIKE '%www.%')",
+        );
+        break;
+      case SearchScope.code:
+        where.add(
+          r"(m.body LIKE '%```%' OR m.body LIKE '%`%`%' OR "
+          r"m.body LIKE '%    %')",
+        );
         break;
       case SearchScope.essence:
         where.add('m.is_essence <> 0');
@@ -461,16 +504,26 @@ class CsacLocalCache {
       ORDER BY m.time DESC, m.id DESC
       LIMIT ?
       ''',
-      [...params, limit],
+      [...params, minTime > 0 ? limit * 4 : limit],
     );
-    return <MessageSearchResult>[
-      for (final row in rows)
+    final results = <MessageSearchResult>[];
+    for (final row in rows) {
+      final message = _messageFromRow(row);
+      if (minTime > 0 && message.timeSortValue < minTime) {
+        continue;
+      }
+      results.add(
         MessageSearchResult(
           conversation: _conversationFromRow(row),
-          message: _messageFromRow(row),
-          snippet: _snippet(_messageFromRow(row).body, text),
+          message: message,
+          snippet: _snippet(message.body, text),
         ),
-    ];
+      );
+      if (results.length >= limit) {
+        break;
+      }
+    }
+    return results;
   }
 
   Future<List<ConversationMediaItem>> loadConversationMedia(
@@ -1150,6 +1203,22 @@ class CsacLocalCache {
         .replaceAll(r'\', r'\\')
         .replaceAll('%', r'\%')
         .replaceAll('_', r'\_');
+  }
+
+  int _minimumSearchTimestamp(MessageSearchDateRange range) {
+    final now = DateTime.now();
+    final DateTime? start = switch (range) {
+      MessageSearchDateRange.any => null,
+      MessageSearchDateRange.today => DateTime(now.year, now.month, now.day),
+      MessageSearchDateRange.sevenDays => now.subtract(const Duration(days: 7)),
+      MessageSearchDateRange.thirtyDays => now.subtract(
+        const Duration(days: 30),
+      ),
+    };
+    if (start == null) {
+      return 0;
+    }
+    return start.millisecondsSinceEpoch;
   }
 
   void _addColumnIfMissing(

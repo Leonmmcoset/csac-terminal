@@ -1144,5 +1144,19 @@
   "Confirm sending message": "",
   "Send to {name}?": "",
   "Open chat with draft": "",
-  "Use draft to prefill the chat input. Add send=confirm to ask before sending.": ""
+  "Use draft to prefill the chat input. Add send=confirm to ask before sending.": "",
+  "Global search": "",
+  "Search this conversation": "",
+  "Search messages, chats, posts and users": "",
+  "Type to search messages, chats, posts or users.": "",
+  "No matching results.": "",
+  "Filters": "",
+  "Links": "",
+  "Conversations": "",
+  "Users": "",
+  "Sender nickname or UID": "",
+  "Any time": "",
+  "Last 7 days": "",
+  "Last 30 days": "",
+  "Limited to {name}": ""
 }

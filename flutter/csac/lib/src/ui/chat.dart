@@ -2252,6 +2252,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
   }
 
+  Future<void> openConversationSearch() {
+    return Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => MessageSearchScreen(
+          state: widget.state,
+          conversation: widget.conversation,
+        ),
+      ),
+    );
+  }
+
   List<_ComposeMenuAction> composeMenuActions(CsacStrings strings) {
     return [
       _ComposeMenuAction(
@@ -2341,6 +2352,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         break;
       case 'media':
         await openMediaCenter();
+        break;
+      case 'search':
+        await openConversationSearch();
         break;
       case 'export':
         await exportConversation();
@@ -2845,6 +2859,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     padding: EdgeInsets.only(right: 8),
                     child: Icon(Icons.cloud_off_outlined),
                   ),
+                IconButton(
+                  tooltip: strings.text('Search this conversation'),
+                  onPressed: openConversationSearch,
+                  icon: const Icon(Icons.search),
+                ),
                 PopupMenuButton<String>(
                   tooltip: strings.text('More'),
                   onSelected: handleAppBarMenuAction,
@@ -2869,6 +2888,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       child: ListTile(
                         leading: const Icon(Icons.perm_media_outlined),
                         title: Text(strings.text('Media and files')),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'search',
+                      child: ListTile(
+                        leading: const Icon(Icons.search),
+                        title: Text(strings.text('Search this conversation')),
                       ),
                     ),
                     if (supportsLocalFiles)

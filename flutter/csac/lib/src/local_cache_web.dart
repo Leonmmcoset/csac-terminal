@@ -81,6 +81,7 @@ class CsacLocalCache {
   Future<List<MessageSearchResult>> searchMessages(
     String query,
     SearchScope scope, {
+    MessageSearchFilter? filter,
     int limit = 80,
   }) async {
     return const <MessageSearchResult>[];

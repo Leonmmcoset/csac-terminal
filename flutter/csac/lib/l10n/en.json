@@ -1149,5 +1149,19 @@
   "Confirm sending message": "Confirm sending message",
   "Send to {name}?": "Send to {name}?",
   "Open chat with draft": "Open chat with draft",
-  "Use draft to prefill the chat input. Add send=confirm to ask before sending.": "Use draft to prefill the chat input. Add send=confirm to ask before sending."
+  "Use draft to prefill the chat input. Add send=confirm to ask before sending.": "Use draft to prefill the chat input. Add send=confirm to ask before sending.",
+  "Global search": "Global search",
+  "Search this conversation": "Search this conversation",
+  "Search messages, chats, posts and users": "Search messages, chats, posts and users",
+  "Type to search messages, chats, posts or users.": "Type to search messages, chats, posts or users.",
+  "No matching results.": "No matching results.",
+  "Filters": "Filters",
+  "Links": "Links",
+  "Conversations": "Conversations",
+  "Users": "Users",
+  "Sender nickname or UID": "Sender nickname or UID",
+  "Any time": "Any time",
+  "Last 7 days": "Last 7 days",
+  "Last 30 days": "Last 30 days",
+  "Limited to {name}": "Limited to {name}"
 }

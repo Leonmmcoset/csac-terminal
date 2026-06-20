@@ -2,7 +2,27 @@ import 'dart:convert';
 
 enum ConversationType { private, group }
 
-enum SearchScope { all, private, group, image, essence }
+enum SearchScope { all, private, group, image, link, code, essence }
+
+enum MessageSearchDateRange { any, today, sevenDays, thirtyDays }
+
+class MessageSearchFilter {
+  const MessageSearchFilter({
+    this.scope = SearchScope.all,
+    this.conversation,
+    this.senderQuery = '',
+    this.dateRange = MessageSearchDateRange.any,
+  });
+
+  final SearchScope scope;
+  final Conversation? conversation;
+  final String senderQuery;
+  final MessageSearchDateRange dateRange;
+
+  bool get hasConversation => conversation != null;
+
+  bool get hasSender => senderQuery.trim().isNotEmpty;
+}
 
 enum ConversationMediaKind { all, image, voice, file }
 

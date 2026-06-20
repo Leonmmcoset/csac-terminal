@@ -1451,9 +1451,10 @@ class CsacAppState extends ChangeNotifier {
 
   Future<List<MessageSearchResult>> searchMessages(
     String query,
-    SearchScope scope,
-  ) {
-    return cache.searchMessages(query, scope);
+    SearchScope scope, {
+    MessageSearchFilter? filter,
+  }) {
+    return cache.searchMessages(query, scope, filter: filter);
   }
 
   Future<List<ConversationMediaItem>> loadConversationMedia(
