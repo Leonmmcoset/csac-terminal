@@ -1221,7 +1221,6 @@
   "Upload EMA package": "上传 EMA 包",
   "EMA uploaded for review.": "EMA 已上传等待审核。",
   "App ID": "应用 ID",
-  "App name": "应用名称",
   "Entry page": "入口页面",
   "App name is required.": "应用名称不能为空。",
   "App ID must start with a letter and contain only letters, numbers, underscore, dash or dot.": "应用 ID 必须以字母开头，且只能包含字母、数字、下划线、短横线或点。"
