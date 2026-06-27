@@ -234,6 +234,73 @@ class AcopPermissionRequest {
   }
 }
 
+class AcopAcrUpload {
+  const AcopAcrUpload({
+    required this.id,
+    required this.fileName,
+    required this.fileType,
+    required this.content,
+    required this.devId,
+    required this.devName,
+    required this.createdAt,
+    required this.raw,
+  });
+
+  final int id;
+  final String fileName;
+  final String fileType;
+  final String content;
+  final int devId;
+  final String devName;
+  final String createdAt;
+  final Map<String, dynamic> raw;
+
+  factory AcopAcrUpload.fromJson(Map<String, dynamic> json) {
+    return AcopAcrUpload(
+      id: _asInt(json['id']),
+      fileName: _asString(json['file_name']),
+      fileType: _asString(json['file_type']),
+      content: _asString(json['content']),
+      devId: _asInt(json['dev_id']),
+      devName: _asString(json['dev_name']),
+      createdAt: _asString(json['created_at']),
+      raw: Map<String, dynamic>.from(json),
+    );
+  }
+}
+
+class AcopEmaUpload {
+  const AcopEmaUpload({
+    required this.id,
+    required this.fileName,
+    required this.content,
+    required this.devId,
+    required this.devName,
+    required this.createdAt,
+    required this.raw,
+  });
+
+  final int id;
+  final String fileName;
+  final String content;
+  final int devId;
+  final String devName;
+  final String createdAt;
+  final Map<String, dynamic> raw;
+
+  factory AcopEmaUpload.fromJson(Map<String, dynamic> json) {
+    return AcopEmaUpload(
+      id: _asInt(json['id']),
+      fileName: _asString(json['file_name']),
+      content: _asString(json['content']),
+      devId: _asInt(json['dev_id']),
+      devName: _asString(json['dev_name']),
+      createdAt: _asString(json['created_at']),
+      raw: Map<String, dynamic>.from(json),
+    );
+  }
+}
+
 class AcopApiClient {
   AcopApiClient({http.Client? httpClient, String baseUrl = defaultBaseUrl})
     : _http = httpClient ?? createApiHttpClient(),
@@ -517,6 +584,16 @@ class AcopApiClient {
     });
   }
 
+  Future<Map<String, dynamic>> uploadEma({
+    required String fileName,
+    required String content,
+  }) {
+    return postJson('/script/upload_ema', <String, Object?>{
+      'file_name': fileName.trim(),
+      'content': content,
+    });
+  }
+
   Future<List<AcopLogEntry>> listLogs({
     required int botId,
     String level = '',
@@ -562,6 +639,64 @@ class AcopApiClient {
   Future<List<AcopBot>> listAdminBots() async {
     final data = await get('/admin/bot/list');
     return _dataList(data).map(AcopBot.fromJson).toList();
+  }
+
+  Future<Map<String, dynamic>> runSaveChainDiagnostic({
+    String name = '',
+    String content = '',
+    String mode = '',
+  }) {
+    return postJson('/diag/test-save', <String, Object?>{
+      if (name.trim().isNotEmpty) 'name': name.trim(),
+      if (content.isNotEmpty) 'content': content,
+      if (mode.trim().isNotEmpty) 'mode': mode.trim(),
+    });
+  }
+
+  Future<List<AcopAcrUpload>> listPendingAcrUploads() async {
+    final data = await postJson('/admin/acr/pending');
+    return _dataList(data).map(AcopAcrUpload.fromJson).toList();
+  }
+
+  Future<Map<String, dynamic>> reviewAcrUpload({
+    required int id,
+    required String action,
+    String adminNote = '',
+  }) {
+    return postJson('/admin/acr/review', <String, Object?>{
+      'id': id,
+      'action': action.trim(),
+      if (adminNote.trim().isNotEmpty) 'admin_note': adminNote.trim(),
+    });
+  }
+
+  Future<Map<String, dynamic>> reviewLibUpload({
+    required int id,
+    required String action,
+    String adminNote = '',
+  }) {
+    return postJson('/admin/lib/review', <String, Object?>{
+      'id': id,
+      'action': action.trim(),
+      if (adminNote.trim().isNotEmpty) 'admin_note': adminNote.trim(),
+    });
+  }
+
+  Future<List<AcopEmaUpload>> listPendingEmaUploads() async {
+    final data = await postJson('/admin/ema/pending');
+    return _dataList(data).map(AcopEmaUpload.fromJson).toList();
+  }
+
+  Future<Map<String, dynamic>> reviewEmaUpload({
+    required int id,
+    required String action,
+    String adminNote = '',
+  }) {
+    return postJson('/admin/ema/review', <String, Object?>{
+      'id': id,
+      'action': action.trim(),
+      if (adminNote.trim().isNotEmpty) 'admin_note': adminNote.trim(),
+    });
   }
 
   Future<Map<String, dynamic>> get(

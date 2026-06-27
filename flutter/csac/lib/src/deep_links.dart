@@ -7,6 +7,8 @@ enum CsacDeepLinkAction {
   search,
   searchResult,
   notices,
+  emApps,
+  emApp,
   profile,
   userProfile,
   groupChat,
@@ -21,6 +23,7 @@ class CsacDeepLinkTarget {
     this.action, {
     this.id,
     this.messageId,
+    this.appId,
     this.query,
     this.draftText,
     this.confirmSend = false,
@@ -29,6 +32,7 @@ class CsacDeepLinkTarget {
   final CsacDeepLinkAction action;
   final int? id;
   final int? messageId;
+  final String? appId;
   final String? query;
   final String? draftText;
   final bool confirmSend;
@@ -98,6 +102,25 @@ CsacDeepLinkTarget parseCsacDeepLink(Uri uri) {
     case 'notification':
     case 'notifications':
       return const CsacDeepLinkTarget(CsacDeepLinkAction.notices);
+    case 'apps':
+    case 'emapps':
+    case 'miniapps':
+      if (segments.length > 1) {
+        return _emAppDeepLinkTarget(segments[1]);
+      }
+      final appId = uri.queryParameters['app_id'] ?? uri.queryParameters['id'];
+      if (appId != null && appId.trim().isNotEmpty) {
+        return _emAppDeepLinkTarget(appId);
+      }
+      return const CsacDeepLinkTarget(CsacDeepLinkAction.emApps);
+    case 'app':
+    case 'emapp':
+    case 'miniapp':
+      return _emAppDeepLinkTarget(
+        segments.length > 1
+            ? segments[1]
+            : (uri.queryParameters['app_id'] ?? uri.queryParameters['id']),
+      );
     case 'me':
     case 'mine':
     case 'settings':
@@ -178,6 +201,10 @@ String csacSearchDeepLink(String query) {
   return encoded.isEmpty
       ? '$csacDeepLinkScheme://search'
       : '$csacDeepLinkScheme://search?q=$encoded';
+}
+
+String csacEmAppDeepLink(String appId) {
+  return '$csacDeepLinkScheme://emapp/${Uri.encodeComponent(appId.trim())}';
 }
 
 String csacGroupMessageDeepLink(int roomId, int messageId) {
@@ -385,4 +412,12 @@ CsacDeepLinkTarget _typedDeepLinkTarget(
     return const CsacDeepLinkTarget(CsacDeepLinkAction.unsupported);
   }
   return CsacDeepLinkTarget(action, id: id);
+}
+
+CsacDeepLinkTarget _emAppDeepLinkTarget(String? rawAppId) {
+  final appId = (rawAppId ?? '').trim();
+  if (appId.isEmpty) {
+    return const CsacDeepLinkTarget(CsacDeepLinkAction.unsupported);
+  }
+  return CsacDeepLinkTarget(CsacDeepLinkAction.emApp, appId: appId);
 }

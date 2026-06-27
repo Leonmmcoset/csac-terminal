@@ -445,11 +445,17 @@ class _AcopPlatformShellState extends State<AcopPlatformShell> {
   int selectedIndex = 0;
   List<AcopBot> bots = const <AcopBot>[];
   List<AcopBot> adminBots = const <AcopBot>[];
+  List<AcopAcrUpload> pendingAcrUploads = const <AcopAcrUpload>[];
+  List<AcopEmaUpload> pendingEmaUploads = const <AcopEmaUpload>[];
   bool loadingBots = false;
   bool loadingAdminBots = false;
+  bool loadingPendingAcr = false;
+  bool loadingPendingEma = false;
   bool savingServer = false;
   String? botsError;
   String? adminError;
+  String? pendingAcrError;
+  String? pendingEmaError;
 
   @override
   void initState() {
@@ -513,6 +519,54 @@ class _AcopPlatformShellState extends State<AcopPlatformShell> {
     } finally {
       if (mounted) {
         setState(() => loadingAdminBots = false);
+      }
+    }
+  }
+
+  Future<void> refreshPendingAcrUploads() async {
+    if (loadingPendingAcr) {
+      return;
+    }
+    setState(() {
+      loadingPendingAcr = true;
+      pendingAcrError = null;
+    });
+    try {
+      final loaded = await widget.state.acopClient.listPendingAcrUploads();
+      if (mounted) {
+        setState(() => pendingAcrUploads = loaded);
+      }
+    } catch (err) {
+      if (mounted) {
+        setState(() => pendingAcrError = err.toString());
+      }
+    } finally {
+      if (mounted) {
+        setState(() => loadingPendingAcr = false);
+      }
+    }
+  }
+
+  Future<void> refreshPendingEmaUploads() async {
+    if (loadingPendingEma) {
+      return;
+    }
+    setState(() {
+      loadingPendingEma = true;
+      pendingEmaError = null;
+    });
+    try {
+      final loaded = await widget.state.acopClient.listPendingEmaUploads();
+      if (mounted) {
+        setState(() => pendingEmaUploads = loaded);
+      }
+    } catch (err) {
+      if (mounted) {
+        setState(() => pendingEmaError = err.toString());
+      }
+    } finally {
+      if (mounted) {
+        setState(() => loadingPendingEma = false);
       }
     }
   }
@@ -805,10 +859,138 @@ class _AcopPlatformShellState extends State<AcopPlatformShell> {
     }
   }
 
+  Future<void> runSaveChainDiagnostic() async {
+    final draft = await showDialog<_AcopSaveDiagnosticDraft>(
+      context: context,
+      builder: (context) => const _AcopSaveDiagnosticDialog(),
+    );
+    if (draft == null || !mounted) {
+      return;
+    }
+    try {
+      final result = await widget.state.acopClient.runSaveChainDiagnostic(
+        name: draft.name,
+        content: draft.content,
+        mode: draft.mode,
+      );
+      if (!mounted) {
+        return;
+      }
+      await showDialog<void>(
+        context: context,
+        builder: (context) => _AcopJsonResultDialog(
+          title: context.strings.text('Save-chain diagnostic'),
+          value: result,
+        ),
+      );
+    } catch (err) {
+      showSnack(err.toString());
+    }
+  }
+
+  Future<void> reviewLibUpload() async {
+    final strings = context.strings;
+    final draft = await showDialog<_AcopLibReviewDraft>(
+      context: context,
+      builder: (context) => const _AcopLibReviewDialog(),
+    );
+    if (draft == null || !mounted) {
+      return;
+    }
+    try {
+      final result = await widget.state.acopClient.reviewLibUpload(
+        id: draft.id,
+        action: draft.action,
+        adminNote: draft.adminNote,
+      );
+      if (!mounted) {
+        return;
+      }
+      final message = result['message']?.toString();
+      showSnack(
+        message == null || message.trim().isEmpty
+            ? strings.text('AJL review submitted.')
+            : message,
+      );
+    } catch (err) {
+      showSnack(err.toString());
+    }
+  }
+
+  Future<void> reviewAcrUpload(AcopAcrUpload upload, String action) async {
+    final strings = context.strings;
+    final draft = await showDialog<_AcopReviewDraft>(
+      context: context,
+      builder: (context) =>
+          _AcopReviewDialog(fileName: upload.fileName, action: action),
+    );
+    if (draft == null || !mounted) {
+      return;
+    }
+    try {
+      final result = await widget.state.acopClient.reviewAcrUpload(
+        id: upload.id,
+        action: draft.action,
+        adminNote: draft.adminNote,
+      );
+      await refreshPendingAcrUploads();
+      if (!mounted) {
+        return;
+      }
+      final message = result['message']?.toString();
+      showSnack(
+        message == null || message.trim().isEmpty
+            ? strings.text('ACR review submitted.')
+            : message,
+      );
+    } catch (err) {
+      showSnack(err.toString());
+    }
+  }
+
+  Future<void> reviewEmaUpload(AcopEmaUpload upload, String action) async {
+    final strings = context.strings;
+    final draft = await showDialog<_AcopReviewDraft>(
+      context: context,
+      builder: (context) =>
+          _AcopReviewDialog(fileName: upload.fileName, action: action),
+    );
+    if (draft == null || !mounted) {
+      return;
+    }
+    try {
+      final result = await widget.state.acopClient.reviewEmaUpload(
+        id: upload.id,
+        action: draft.action,
+        adminNote: draft.adminNote,
+      );
+      await refreshPendingEmaUploads();
+      if (!mounted) {
+        return;
+      }
+      final message = result['message']?.toString();
+      showSnack(
+        message == null || message.trim().isEmpty
+            ? strings.text('EMA review submitted.')
+            : message,
+      );
+    } catch (err) {
+      showSnack(err.toString());
+    }
+  }
+
   void selectDestination(int index) {
     setState(() => selectedIndex = index);
-    if (index == 1 && adminBots.isEmpty && !loadingAdminBots) {
-      unawaited(refreshAdminBots());
+    if (index == 1) {
+      if (adminBots.isEmpty && !loadingAdminBots) {
+        unawaited(refreshAdminBots());
+      }
+      if (pendingAcrUploads.isEmpty && !loadingPendingAcr) {
+        unawaited(refreshPendingAcrUploads());
+      }
+      if (pendingEmaUploads.isEmpty && !loadingPendingEma) {
+        unawaited(refreshPendingEmaUploads());
+      }
     }
   }
 
@@ -832,11 +1014,23 @@ class _AcopPlatformShellState extends State<AcopPlatformShell> {
       ),
       _AcopAdminPage(
         bots: adminBots,
+        pendingAcrUploads: pendingAcrUploads,
+        pendingEmaUploads: pendingEmaUploads,
         assetBaseUrl: widget.state.acopClient.baseUrl,
         loading: loadingAdminBots,
+        loadingPendingAcr: loadingPendingAcr,
+        loadingPendingEma: loadingPendingEma,
         error: adminError,
+        pendingAcrError: pendingAcrError,
+        pendingEmaError: pendingEmaError,
         onRefresh: refreshAdminBots,
+        onRefreshPendingAcr: refreshPendingAcrUploads,
+        onRefreshPendingEma: refreshPendingEmaUploads,
         onHandlePermission: handlePermissionById,
+        onRunDiagnostic: runSaveChainDiagnostic,
+        onReviewLib: reviewLibUpload,
+        onReviewAcr: reviewAcrUpload,
+        onReviewEma: reviewEmaUpload,
       ),
       _AcopAccountPage(
         state: widget.state,
@@ -861,7 +1055,12 @@ class _AcopPlatformShellState extends State<AcopPlatformShell> {
           ),
           IconButton(
             tooltip: strings.text('Refresh'),
-            onPressed: selectedIndex == 1 ? refreshAdminBots : refreshBots,
+            onPressed: selectedIndex == 1
+                ? () {
+                    unawaited(refreshAdminBots());
+                    unawaited(refreshPendingAcrUploads());
+                  }
+                : refreshBots,
             icon: const Icon(Icons.refresh),
           ),
           IconButton(
@@ -1012,40 +1211,202 @@ class _AcopBotsPage extends StatelessWidget {
 class _AcopAdminPage extends StatelessWidget {
   const _AcopAdminPage({
     required this.bots,
+    required this.pendingAcrUploads,
+    required this.pendingEmaUploads,
     required this.assetBaseUrl,
     required this.loading,
+    required this.loadingPendingAcr,
+    required this.loadingPendingEma,
     required this.error,
+    required this.pendingAcrError,
+    required this.pendingEmaError,
     required this.onRefresh,
+    required this.onRefreshPendingAcr,
+    required this.onRefreshPendingEma,
     required this.onHandlePermission,
+    required this.onRunDiagnostic,
+    required this.onReviewLib,
+    required this.onReviewAcr,
+    required this.onReviewEma,
   });
 
   final List<AcopBot> bots;
+  final List<AcopAcrUpload> pendingAcrUploads;
+  final List<AcopEmaUpload> pendingEmaUploads;
   final String assetBaseUrl;
   final bool loading;
+  final bool loadingPendingAcr;
+  final bool loadingPendingEma;
   final String? error;
+  final String? pendingAcrError;
+  final String? pendingEmaError;
   final Future<void> Function() onRefresh;
+  final Future<void> Function() onRefreshPendingAcr;
+  final Future<void> Function() onRefreshPendingEma;
   final Future<void> Function() onHandlePermission;
+  final Future<void> Function() onRunDiagnostic;
+  final Future<void> Function() onReviewLib;
+  final Future<void> Function(AcopAcrUpload upload, String action) onReviewAcr;
+  final Future<void> Function(AcopEmaUpload upload, String action) onReviewEma;
 
   @override
   Widget build(BuildContext context) {
     final strings = context.strings;
     return RefreshIndicator(
-      onRefresh: onRefresh,
+      onRefresh: () async {
+        await Future.wait([
+          onRefresh(),
+          onRefreshPendingAcr(),
+          onRefreshPendingEma(),
+        ]);
+      },
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         children: [
           _AcopHeaderRow(
             title: strings.text('Admin tools'),
             subtitle: strings.text(
-              'View all bots and handle permission requests.',
+              'Review ACR uploads, run diagnostics and handle permissions.',
             ),
-            action: OutlinedButton.icon(
-              onPressed: onHandlePermission,
-              icon: const Icon(Icons.rule_outlined),
-              label: Text(strings.text('Handle permission')),
+            action: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.end,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: onRunDiagnostic,
+                  icon: const Icon(Icons.health_and_safety_outlined),
+                  label: Text(strings.text('Save-chain diagnostic')),
+                ),
+                OutlinedButton.icon(
+                  onPressed: onHandlePermission,
+                  icon: const Icon(Icons.rule_outlined),
+                  label: Text(strings.text('Handle permission')),
+                ),
+                OutlinedButton.icon(
+                  onPressed: onReviewLib,
+                  icon: const Icon(Icons.library_books_outlined),
+                  label: Text(strings.text('Review AJL library')),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 12),
+          _SettingsSectionTitle(strings.text('Pending EMA uploads')),
+          Card(
+            elevation: 0,
+            child: _RoundedInkClip(
+              child: Column(
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.apps_outlined),
+                    title: Text(strings.text('EMA review queue')),
+                    subtitle: Text(
+                      strings.text(
+                        'Approving an EMA publishes it to the eMApps package service.',
+                      ),
+                    ),
+                    trailing: IconButton(
+                      tooltip: strings.text('Refresh'),
+                      onPressed: onRefreshPendingEma,
+                      icon: const Icon(Icons.refresh),
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  if (loadingPendingEma)
+                    const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: LinearProgressIndicator(),
+                    )
+                  else if (pendingEmaError != null)
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: _AcopErrorPanel(
+                        message: pendingEmaError!,
+                        onRetry: onRefreshPendingEma,
+                      ),
+                    )
+                  else if (pendingEmaUploads.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: _EmptyPanel(
+                        message: strings.text('No pending EMA uploads.'),
+                      ),
+                    )
+                  else
+                    for (var i = 0; i < pendingEmaUploads.length; i++) ...[
+                      if (i > 0) const Divider(height: 1),
+                      _AcopEmaUploadTile(
+                        upload: pendingEmaUploads[i],
+                        onApprove: () =>
+                            onReviewEma(pendingEmaUploads[i], 'approve'),
+                        onReject: () =>
+                            onReviewEma(pendingEmaUploads[i], 'reject'),
+                      ),
+                    ],
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          _SettingsSectionTitle(strings.text('Pending ACR uploads')),
+          Card(
+            elevation: 0,
+            child: _RoundedInkClip(
+              child: Column(
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.fact_check_outlined),
+                    title: Text(strings.text('ACR review queue')),
+                    subtitle: Text(
+                      strings.text(
+                        'Approving an ACR also saves it to ServerBot lib as AJL.',
+                      ),
+                    ),
+                    trailing: IconButton(
+                      tooltip: strings.text('Refresh'),
+                      onPressed: onRefreshPendingAcr,
+                      icon: const Icon(Icons.refresh),
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  if (loadingPendingAcr)
+                    const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: LinearProgressIndicator(),
+                    )
+                  else if (pendingAcrError != null)
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: _AcopErrorPanel(
+                        message: pendingAcrError!,
+                        onRetry: onRefreshPendingAcr,
+                      ),
+                    )
+                  else if (pendingAcrUploads.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: _EmptyPanel(
+                        message: strings.text('No pending ACR uploads.'),
+                      ),
+                    )
+                  else
+                    for (var i = 0; i < pendingAcrUploads.length; i++) ...[
+                      if (i > 0) const Divider(height: 1),
+                      _AcopAcrUploadTile(
+                        upload: pendingAcrUploads[i],
+                        onApprove: () =>
+                            onReviewAcr(pendingAcrUploads[i], 'approve'),
+                        onReject: () =>
+                            onReviewAcr(pendingAcrUploads[i], 'reject'),
+                      ),
+                    ],
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          _SettingsSectionTitle(strings.text('All bots')),
           if (loading)
             const LinearProgressIndicator()
           else if (error != null)
@@ -1386,6 +1747,161 @@ class _AcopAdminBotTile extends StatelessWidget {
   }
 }
 
+class _AcopAcrUploadTile extends StatelessWidget {
+  const _AcopAcrUploadTile({
+    required this.upload,
+    required this.onApprove,
+    required this.onReject,
+  });
+
+  final AcopAcrUpload upload;
+  final VoidCallback onApprove;
+  final VoidCallback onReject;
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    final title = upload.fileName.isEmpty
+        ? 'ACR #${upload.id}'
+        : upload.fileName;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(0, 4, 0, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.integration_instructions_outlined),
+            title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+            subtitle: Text(
+              [
+                'ID ${upload.id}',
+                if (upload.fileType.isNotEmpty) upload.fileType,
+                if (upload.devName.isNotEmpty) upload.devName,
+                if (upload.createdAt.isNotEmpty) upload.createdAt,
+              ].join(' | '),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (upload.content.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+              child: Material(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: SelectableText(
+                    upload.content,
+                    maxLines: 5,
+                    style: const TextStyle(fontFamily: 'monospace'),
+                  ),
+                ),
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.end,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: onReject,
+                  icon: const Icon(Icons.close),
+                  label: Text(strings.text('Reject')),
+                ),
+                FilledButton.icon(
+                  onPressed: onApprove,
+                  icon: const Icon(Icons.check),
+                  label: Text(strings.text('Approve')),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AcopEmaUploadTile extends StatelessWidget {
+  const _AcopEmaUploadTile({
+    required this.upload,
+    required this.onApprove,
+    required this.onReject,
+  });
+
+  final AcopEmaUpload upload;
+  final VoidCallback onApprove;
+  final VoidCallback onReject;
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    final title = upload.fileName.isEmpty
+        ? 'EMA #${upload.id}'
+        : upload.fileName;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(0, 4, 0, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.apps_outlined),
+            title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+            subtitle: Text(
+              [
+                'ID ${upload.id}',
+                if (upload.devName.isNotEmpty) upload.devName,
+                if (upload.createdAt.isNotEmpty) upload.createdAt,
+              ].join(' | '),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (upload.content.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+              child: Material(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: SelectableText(
+                    upload.content,
+                    maxLines: 5,
+                    style: const TextStyle(fontFamily: 'monospace'),
+                  ),
+                ),
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.end,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: onReject,
+                  icon: const Icon(Icons.close),
+                  label: Text(strings.text('Reject')),
+                ),
+                FilledButton.icon(
+                  onPressed: onApprove,
+                  icon: const Icon(Icons.check),
+                  label: Text(strings.text('Approve')),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class AcopBotDetailScreen extends StatefulWidget {
   const AcopBotDetailScreen({
     super.key,
@@ -1515,6 +2031,7 @@ class _AcopBotDetailScreenState extends State<AcopBotDetailScreen> {
     final draft = await Navigator.of(context).push<_AcopScriptDraft>(
       MaterialPageRoute<_AcopScriptDraft>(
         builder: (context) => _AcopScriptEditorScreen(
+          state: widget.state,
           showGeneratedCode:
               widget.state.preferences.showAcopBlockGeneratedCode,
           mobileWordWrap: widget.state.preferences.wrapAcopCodeEditorOnMobile,
@@ -1546,6 +2063,7 @@ class _AcopBotDetailScreenState extends State<AcopBotDetailScreen> {
     final draft = await Navigator.of(context).push<_AcopScriptDraft>(
       MaterialPageRoute<_AcopScriptDraft>(
         builder: (context) => _AcopScriptEditorScreen(
+          state: widget.state,
           script: loaded,
           showGeneratedCode:
               widget.state.preferences.showAcopBlockGeneratedCode,
@@ -2414,11 +2932,13 @@ class _AcopScriptDraft {
 
 class _AcopScriptEditorScreen extends StatefulWidget {
   const _AcopScriptEditorScreen({
+    required this.state,
     this.script,
     required this.showGeneratedCode,
     required this.mobileWordWrap,
   });
 
+  final CsacAppState state;
   final AcopScript? script;
   final bool showGeneratedCode;
   final bool mobileWordWrap;
@@ -2507,6 +3027,49 @@ class _AcopScriptEditorScreenState extends State<_AcopScriptEditorScreen> {
     content.text = draft.code;
   }
 
+  Future<void> uploadEmaPackage() async {
+    final draft = await showDialog<_AcopEmaDraft>(
+      context: context,
+      builder: (context) => _AcopEmaDialog(defaultName: name.text),
+    );
+    if (draft == null || !mounted) {
+      return;
+    }
+    final emaContent = _buildEmaPackageJson(
+      appId: draft.appId,
+      name: draft.name,
+      description: draft.description,
+      entryPage: draft.entryPage,
+      script: content.text,
+    );
+    try {
+      final result = await widget.state.acopClient.uploadEma(
+        fileName: '${draft.appId}.ema',
+        content: emaContent,
+      );
+      if (!mounted) {
+        return;
+      }
+      final message = result['message']?.toString();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            message == null || message.trim().isEmpty
+                ? context.strings.text('EMA uploaded for review.')
+                : message,
+          ),
+        ),
+      );
+    } catch (err) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(err.toString())));
+    }
+  }
+
   Future<void> handlePopAttempt() async {
     if (!hasUnsavedChanges) {
       allowPop = true;
@@ -2562,6 +3125,11 @@ class _AcopScriptEditorScreenState extends State<_AcopScriptEditorScreen> {
               onPressed: openBlockEditor,
               icon: const Icon(Icons.account_tree_outlined),
             ),
+            IconButton(
+              tooltip: strings.text('Upload EMA package'),
+              onPressed: uploadEmaPackage,
+              icon: const Icon(Icons.upload_file_outlined),
+            ),
             TextButton.icon(
               onPressed: submit,
               icon: const Icon(Icons.save_outlined),
@@ -2612,6 +3180,152 @@ class _AcopTestEventDraft {
 
   final String eventType;
   final String eventData;
+}
+
+class _AcopEmaDraft {
+  const _AcopEmaDraft({
+    required this.appId,
+    required this.name,
+    required this.description,
+    required this.entryPage,
+  });
+
+  final String appId;
+  final String name;
+  final String description;
+  final String entryPage;
+}
+
+class _AcopEmaDialog extends StatefulWidget {
+  const _AcopEmaDialog({required this.defaultName});
+
+  final String defaultName;
+
+  @override
+  State<_AcopEmaDialog> createState() => _AcopEmaDialogState();
+}
+
+class _AcopEmaDialogState extends State<_AcopEmaDialog> {
+  late final TextEditingController appId;
+  late final TextEditingController name;
+  final description = TextEditingController();
+  final entryPage = TextEditingController(text: 'index.html');
+
+  @override
+  void initState() {
+    super.initState();
+    final defaultName = widget.defaultName.trim();
+    name = TextEditingController(text: defaultName);
+    appId = TextEditingController(
+      text: defaultName.isEmpty
+          ? 'com.csac.app'
+          : 'com.csac.${_sanitizeEmaIdPart(defaultName)}',
+    );
+  }
+
+  @override
+  void dispose() {
+    appId.dispose();
+    name.dispose();
+    description.dispose();
+    entryPage.dispose();
+    super.dispose();
+  }
+
+  void submit() {
+    final normalizedAppId = appId.text.trim();
+    if (!RegExp(r'^[A-Za-z][A-Za-z0-9_.-]{0,63}$').hasMatch(normalizedAppId)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            context.strings.text(
+              'App ID must start with a letter and contain only letters, numbers, underscore, dash or dot.',
+            ),
+          ),
+        ),
+      );
+      return;
+    }
+    final appName = name.text.trim();
+    if (appName.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.strings.text('App name is required.'))),
+      );
+      return;
+    }
+    Navigator.of(context).pop(
+      _AcopEmaDraft(
+        appId: normalizedAppId,
+        name: appName,
+        description: description.text.trim(),
+        entryPage: entryPage.text.trim().isEmpty
+            ? 'index.html'
+            : entryPage.text.trim(),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    return AlertDialog(
+      title: Text(strings.text('Upload EMA package')),
+      content: _AcopDialogBody(
+        maxWidth: 560,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: appId,
+              decoration: InputDecoration(
+                labelText: strings.text('App ID'),
+                helperText: 'com.csac.example',
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: name,
+              decoration: InputDecoration(
+                labelText: strings.text('App name'),
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: description,
+              minLines: 2,
+              maxLines: 4,
+              decoration: InputDecoration(
+                labelText: strings.text('Description'),
+                alignLabelWithHint: true,
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: entryPage,
+              decoration: InputDecoration(
+                labelText: strings.text('Entry page'),
+                border: const OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(strings.text('Cancel')),
+        ),
+        FilledButton.icon(
+          onPressed: submit,
+          icon: const Icon(Icons.upload_file_outlined),
+          label: Text(strings.text('Upload')),
+        ),
+      ],
+    );
+  }
 }
 
 class _AcopTestEventDialog extends StatefulWidget {
@@ -2743,6 +3457,57 @@ class _AcopScriptGuideScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+String _buildEmaPackageJson({
+  required String appId,
+  required String name,
+  required String description,
+  required String entryPage,
+  required String script,
+}) {
+  final safeEntry = entryPage.trim().isEmpty ? 'index.html' : entryPage.trim();
+  final html =
+      '''
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>${htmlEscape.convert(name)}</title>
+  <style>
+    body { margin: 0; font-family: system-ui, sans-serif; padding: 16px; }
+    #app { min-height: 100vh; }
+  </style>
+</head>
+<body>
+  <main id="app"></main>
+  <script src="main.js"></script>
+</body>
+</html>
+''';
+  return const JsonEncoder.withIndent('  ').convert({
+    'appId': appId.trim(),
+    'name': name.trim(),
+    'version': '1.0.0',
+    'desc': description.trim(),
+    'entryPage': safeEntry,
+    'files': [
+      {'filename': safeEntry, 'content': html},
+      {'filename': 'main.js', 'content': script},
+    ],
+  });
+}
+
+String _sanitizeEmaIdPart(String value) {
+  final sanitized = value
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9_-]+'), '_')
+      .replaceAll(RegExp(r'^_+|_+$'), '');
+  if (sanitized.isEmpty || !RegExp(r'^[a-z]').hasMatch(sanitized)) {
+    return 'app';
+  }
+  return sanitized.length > 32 ? sanitized.substring(0, 32) : sanitized;
 }
 
 class _AcopPermissionDraft {
@@ -2933,6 +3698,303 @@ class _AcopAdminPermissionDialogState
           child: Text(strings.text('Cancel')),
         ),
         FilledButton(onPressed: submit, child: Text(strings.text('Submit'))),
+      ],
+    );
+  }
+}
+
+class _AcopSaveDiagnosticDraft {
+  const _AcopSaveDiagnosticDraft({
+    required this.name,
+    required this.content,
+    required this.mode,
+  });
+
+  final String name;
+  final String content;
+  final String mode;
+}
+
+class _AcopSaveDiagnosticDialog extends StatefulWidget {
+  const _AcopSaveDiagnosticDialog();
+
+  @override
+  State<_AcopSaveDiagnosticDialog> createState() =>
+      _AcopSaveDiagnosticDialogState();
+}
+
+class _AcopSaveDiagnosticDialogState extends State<_AcopSaveDiagnosticDialog> {
+  final name = TextEditingController(text: 'diag_test');
+  final content = TextEditingController(
+    text: "// DIAG test content\nconsole.log('test');",
+  );
+  String mode = '';
+
+  @override
+  void dispose() {
+    name.dispose();
+    content.dispose();
+    super.dispose();
+  }
+
+  void submit() {
+    Navigator.of(context).pop(
+      _AcopSaveDiagnosticDraft(
+        name: name.text.trim(),
+        content: content.text,
+        mode: mode,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    return AlertDialog(
+      title: Text(strings.text('Save-chain diagnostic')),
+      content: _AcopDialogBody(
+        maxWidth: 560,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: name,
+              decoration: InputDecoration(
+                labelText: strings.text('Library name'),
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              initialValue: mode,
+              decoration: InputDecoration(
+                labelText: strings.text('Diagnostic mode'),
+                border: const OutlineInputBorder(),
+              ),
+              items: [
+                DropdownMenuItem(value: '', child: Text(strings.text('All'))),
+                const DropdownMenuItem(value: 'direct', child: Text('direct')),
+                const DropdownMenuItem(value: 'http', child: Text('http')),
+              ],
+              onChanged: (value) => setState(() => mode = value ?? ''),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: content,
+              minLines: 5,
+              maxLines: 10,
+              decoration: InputDecoration(
+                labelText: strings.text('Library content'),
+                alignLabelWithHint: true,
+                border: const OutlineInputBorder(),
+              ),
+              style: const TextStyle(fontFamily: 'monospace'),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(strings.text('Cancel')),
+        ),
+        FilledButton.icon(
+          onPressed: submit,
+          icon: const Icon(Icons.play_arrow_outlined),
+          label: Text(strings.text('Run diagnostic')),
+        ),
+      ],
+    );
+  }
+}
+
+class _AcopReviewDraft {
+  const _AcopReviewDraft({required this.action, required this.adminNote});
+
+  final String action;
+  final String adminNote;
+}
+
+class _AcopLibReviewDraft {
+  const _AcopLibReviewDraft({
+    required this.id,
+    required this.action,
+    required this.adminNote,
+  });
+
+  final int id;
+  final String action;
+  final String adminNote;
+}
+
+class _AcopLibReviewDialog extends StatefulWidget {
+  const _AcopLibReviewDialog();
+
+  @override
+  State<_AcopLibReviewDialog> createState() => _AcopLibReviewDialogState();
+}
+
+class _AcopLibReviewDialogState extends State<_AcopLibReviewDialog> {
+  final id = TextEditingController();
+  final adminNote = TextEditingController();
+  String action = 'approve';
+
+  @override
+  void dispose() {
+    id.dispose();
+    adminNote.dispose();
+    super.dispose();
+  }
+
+  void submit() {
+    final parsed = int.tryParse(id.text.trim());
+    if (parsed == null || parsed <= 0) {
+      return;
+    }
+    Navigator.of(context).pop(
+      _AcopLibReviewDraft(
+        id: parsed,
+        action: action,
+        adminNote: adminNote.text.trim(),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    return AlertDialog(
+      title: Text(strings.text('Review AJL library')),
+      content: _AcopDialogBody(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: id,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: InputDecoration(
+                labelText: strings.text('Library ID'),
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              initialValue: action,
+              decoration: InputDecoration(
+                labelText: strings.text('Action'),
+                border: const OutlineInputBorder(),
+              ),
+              items: [
+                DropdownMenuItem(
+                  value: 'approve',
+                  child: Text(strings.text('Approve')),
+                ),
+                DropdownMenuItem(
+                  value: 'reject',
+                  child: Text(strings.text('Reject')),
+                ),
+              ],
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() => action = value);
+                }
+              },
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: adminNote,
+              minLines: 3,
+              maxLines: 5,
+              decoration: InputDecoration(
+                labelText: strings.text('Admin note'),
+                alignLabelWithHint: true,
+                border: const OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(strings.text('Cancel')),
+        ),
+        FilledButton.icon(
+          onPressed: submit,
+          icon: const Icon(Icons.save_outlined),
+          label: Text(strings.text('Submit')),
+        ),
+      ],
+    );
+  }
+}
+
+class _AcopReviewDialog extends StatefulWidget {
+  const _AcopReviewDialog({required this.fileName, required this.action});
+
+  final String fileName;
+  final String action;
+
+  @override
+  State<_AcopReviewDialog> createState() => _AcopReviewDialogState();
+}
+
+class _AcopReviewDialogState extends State<_AcopReviewDialog> {
+  final adminNote = TextEditingController();
+
+  @override
+  void dispose() {
+    adminNote.dispose();
+    super.dispose();
+  }
+
+  void submit() {
+    Navigator.of(context).pop(
+      _AcopReviewDraft(action: widget.action, adminNote: adminNote.text.trim()),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    final approving = widget.action == 'approve';
+    return AlertDialog(
+      title: Text(strings.text(approving ? 'Approve ACR?' : 'Reject ACR?')),
+      content: _AcopDialogBody(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              strings.format('Review {name}', {
+                'name': widget.fileName.isEmpty ? 'ACR' : widget.fileName,
+              }),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: adminNote,
+              minLines: 3,
+              maxLines: 5,
+              decoration: InputDecoration(
+                labelText: strings.text('Admin note'),
+                alignLabelWithHint: true,
+                border: const OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(strings.text('Cancel')),
+        ),
+        FilledButton.icon(
+          onPressed: submit,
+          icon: Icon(approving ? Icons.check : Icons.close),
+          label: Text(strings.text(approving ? 'Approve' : 'Reject')),
+        ),
       ],
     );
   }

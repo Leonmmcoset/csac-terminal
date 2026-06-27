@@ -125,6 +125,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pub-
 
+      - name: Cache Flutter build metadata
+        uses: actions/cache@v4
+        with:
+          path: flutter/csac/.dart_tool
+          key: ${{ runner.os }}-windows-dart-tool-${{ hashFiles('flutter/csac/pubspec.yaml', 'flutter/csac/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-windows-dart-tool-
+
       - name: Get dependencies
         run: flutter pub get
 
@@ -249,6 +257,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pub-
 
+      - name: Cache Flutter build metadata
+        uses: actions/cache@v4
+        with:
+          path: flutter/csac/.dart_tool
+          key: ${{ runner.os }}-linux-dart-tool-${{ hashFiles('flutter/csac/pubspec.yaml', 'flutter/csac/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-linux-dart-tool-
+
       - name: Get dependencies
         run: flutter pub get
 
@@ -372,6 +388,14 @@ jobs:
 
       - name: Enable macOS desktop
         run: flutter config --enable-macos-desktop
+
+      - name: Cache Flutter build metadata
+        uses: actions/cache@v4
+        with:
+          path: flutter/csac/.dart_tool
+          key: ${{ runner.os }}-macos-dart-tool-${{ hashFiles('flutter/csac/pubspec.yaml', 'flutter/csac/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-macos-dart-tool-
 
       - name: Get dependencies
         run: flutter pub get
@@ -519,6 +543,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pub-
 
+      - name: Cache Flutter build metadata
+        uses: actions/cache@v4
+        with:
+          path: flutter/csac/.dart_tool
+          key: ${{ runner.os }}-android-dart-tool-${{ hashFiles('flutter/csac/pubspec.yaml', 'flutter/csac/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-android-dart-tool-
+
       - name: Get dependencies
         run: flutter pub get
 
@@ -641,6 +673,14 @@ jobs:
           cd flutter/csac
           flutter --version
 
+      - name: Cache Flutter build metadata
+        uses: actions/cache@v4
+        with:
+          path: flutter/csac/.dart_tool
+          key: ${{ runner.os }}-ios-dart-tool-${{ hashFiles('flutter/csac/pubspec.yaml', 'flutter/csac/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-ios-dart-tool-
+
       - name: Get dependencies
         run: |
           cd flutter/csac
@@ -705,6 +745,14 @@ jobs:
 
       - name: Enable Web
         run: flutter config --enable-web
+
+      - name: Cache Flutter build metadata
+        uses: actions/cache@v4
+        with:
+          path: flutter/csac/.dart_tool
+          key: ${{ runner.os }}-web-dart-tool-${{ hashFiles('flutter/csac/pubspec.yaml', 'flutter/csac/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-web-dart-tool-
 
       - name: Get dependencies
         run: flutter pub get

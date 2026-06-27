@@ -125,6 +125,17 @@ class ProfileScreen extends StatelessWidget {
                             },
                     ),
                     actionTile(
+                      icon: Icons.apps_outlined,
+                      title: strings.text('eMApps'),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => EmAppsScreen(state: state),
+                          ),
+                        );
+                      },
+                    ),
+                    actionTile(
                       icon: Icons.sync,
                       title: strings.text('Refresh all'),
                       onTap: () => unawaited(state.refreshHome()),
@@ -2255,6 +2266,7 @@ class ApiDocEndpoint {
     required this.summary,
     required this.description,
     this.params = const <ApiDocParam>[],
+    this.runnableInExplorer = true,
   });
 
   final String group;
@@ -2263,6 +2275,7 @@ class ApiDocEndpoint {
   final String summary;
   final String description;
   final List<ApiDocParam> params;
+  final bool runnableInExplorer;
 
   String get methodLabel => method == ApiDocMethod.post ? 'POST' : 'GET';
 }
@@ -3386,6 +3399,275 @@ const apiDocEndpoints = <ApiDocEndpoint>[
     ],
   ),
   ApiDocEndpoint(
+    group: 'ACOP',
+    route: 'diag/test-save',
+    method: ApiDocMethod.post,
+    summary: 'ACOP save-chain diagnostic',
+    description:
+        'ACOP gateway diagnostic route. Tests the complete ACR/AJL save chain and ACOP to ServerBot communication. Use the ACOP server address, not the normal CsAC API base URL.',
+    params: [
+      ApiDocParam(
+        name: 'name',
+        description: 'Optional test library name, default diag_test',
+        example: 'diag_test',
+      ),
+      ApiDocParam(
+        name: 'content',
+        description: 'Optional JavaScript library content',
+        example: "// DIAG test content\nconsole.log('test');",
+      ),
+      ApiDocParam(
+        name: 'mode',
+        description: 'Optional direct or http; empty runs the full path',
+        example: 'http',
+      ),
+    ],
+    runnableInExplorer: false,
+  ),
+  ApiDocEndpoint(
+    group: 'ACOP',
+    route: 'admin/acr/pending',
+    method: ApiDocMethod.post,
+    summary: 'Pending ACR uploads',
+    description:
+        'ACOP admin route. Lists pending ACR uploads and includes content so approval can save directly to ServerBot lib.',
+    runnableInExplorer: false,
+  ),
+  ApiDocEndpoint(
+    group: 'ACOP',
+    route: 'admin/acr/review',
+    method: ApiDocMethod.post,
+    summary: 'Review ACR upload',
+    description:
+        'ACOP admin route. Approve or reject an ACR upload. Approval saves the script to ServerBot lib as AJL.',
+    params: [
+      ApiDocParam(name: 'id', description: 'ACR upload ID', required: true),
+      ApiDocParam(
+        name: 'action',
+        description: 'approve or reject',
+        required: true,
+        example: 'approve',
+      ),
+      ApiDocParam(name: 'admin_note', description: 'Optional admin note'),
+    ],
+    runnableInExplorer: false,
+  ),
+  ApiDocEndpoint(
+    group: 'ACOP',
+    route: 'admin/lib/review',
+    method: ApiDocMethod.post,
+    summary: 'Review AJL library',
+    description:
+        'ACOP admin route. Approval notifies ServerBot to sign and save the AJL library to lib/.',
+    params: [
+      ApiDocParam(name: 'id', description: 'Library upload ID', required: true),
+      ApiDocParam(
+        name: 'action',
+        description: 'approve or reject',
+        required: true,
+        example: 'approve',
+      ),
+      ApiDocParam(name: 'admin_note', description: 'Optional admin note'),
+    ],
+    runnableInExplorer: false,
+  ),
+  ApiDocEndpoint(
+    group: 'ACOP',
+    route: 'script/upload_ema',
+    method: ApiDocMethod.post,
+    summary: 'Upload EMA package',
+    description:
+        'ACOP developer route. Uploads an EMA JSON package for admin review before it is approved into eMApps.',
+    params: [
+      ApiDocParam(
+        name: 'file_name',
+        description: 'EMA file name',
+        required: true,
+      ),
+      ApiDocParam(
+        name: 'content',
+        description: 'EMA JSON content',
+        required: true,
+      ),
+    ],
+    runnableInExplorer: false,
+  ),
+  ApiDocEndpoint(
+    group: 'ACOP',
+    route: 'admin/ema/pending',
+    method: ApiDocMethod.post,
+    summary: 'Pending EMA uploads',
+    description:
+        'ACOP admin route. Lists pending EMA uploads waiting for eMApps publication approval.',
+    runnableInExplorer: false,
+  ),
+  ApiDocEndpoint(
+    group: 'ACOP',
+    route: 'admin/ema/review',
+    method: ApiDocMethod.post,
+    summary: 'Review EMA upload',
+    description:
+        'ACOP admin route. Approve or reject an EMA upload. Approval calls the eMApps internal approve callback.',
+    params: [
+      ApiDocParam(name: 'id', description: 'EMA upload ID', required: true),
+      ApiDocParam(
+        name: 'action',
+        description: 'approve or reject',
+        required: true,
+        example: 'approve',
+      ),
+      ApiDocParam(name: 'admin_note', description: 'Optional admin note'),
+    ],
+    runnableInExplorer: false,
+  ),
+  ApiDocEndpoint(
+    group: 'ServerBot',
+    route: '/bot/internal/lib/approve',
+    method: ApiDocMethod.post,
+    summary: 'Approve and save library',
+    description:
+        'ServerBot internal route. Requires X-Bot-Secret. ACOP calls this after approving ACR/AJL content; it signs, writes lib/name.ajl and reloads libraries.',
+    params: [
+      ApiDocParam(name: 'id', description: 'Library ID, 0 for diagnostics'),
+      ApiDocParam(name: 'name', description: 'Library name', required: true),
+      ApiDocParam(
+        name: 'version',
+        description: 'Library version, default 1.0.0',
+      ),
+      ApiDocParam(
+        name: 'content',
+        description: 'JavaScript library source',
+        required: true,
+      ),
+    ],
+    runnableInExplorer: false,
+  ),
+  ApiDocEndpoint(
+    group: 'ServerBot',
+    route: '/bot/internal/lib/reload',
+    method: ApiDocMethod.post,
+    summary: 'Reload libraries',
+    description:
+        'ServerBot internal route. Requires X-Bot-Secret. Reloads all .ajl files from lib/.',
+    runnableInExplorer: false,
+  ),
+  ApiDocEndpoint(
+    group: 'eMApps',
+    route: '/emapps/public/catalog',
+    method: ApiDocMethod.get,
+    summary: 'eMApps catalog',
+    description:
+        'Public eMApps service route. Lists published mini apps. Use the eMApps server address, not the CsAC RPC gateway.',
+    params: [ApiDocParam(name: 'kw', description: 'Optional keyword search')],
+    runnableInExplorer: false,
+  ),
+  ApiDocEndpoint(
+    group: 'eMApps',
+    route: '/emapps/public/info',
+    method: ApiDocMethod.post,
+    summary: 'eMApps package info',
+    description:
+        'Public eMApps service route. Returns latest version metadata, SHA-256 hash and RSA signature for one app.',
+    params: [
+      ApiDocParam(name: 'app_id', description: 'eMApp appId', required: true),
+    ],
+    runnableInExplorer: false,
+  ),
+  ApiDocEndpoint(
+    group: 'eMApps',
+    route: '/emapps/public/key',
+    method: ApiDocMethod.get,
+    summary: 'eMApps public key',
+    description:
+        'Public eMApps service route. Returns the RSA public key used by the client to verify packages.',
+    runnableInExplorer: false,
+  ),
+  ApiDocEndpoint(
+    group: 'eMApps',
+    route: '/emapps/dl/{appId}',
+    method: ApiDocMethod.get,
+    summary: 'Download eMApp package',
+    description:
+        'Download route. Returns the signed package bytes for the latest version of an eMApp.',
+    runnableInExplorer: false,
+  ),
+  ApiDocEndpoint(
+    group: 'eMApps',
+    route: '/emapps/api/pkg/upload',
+    method: ApiDocMethod.post,
+    summary: 'Developer package upload',
+    description:
+        'Developer eMApps route. Requires X-Dev-Token and multipart ZIP field pkg_file. Documented here only.',
+    params: [
+      ApiDocParam(name: 'app_id', description: 'eMApp appId', required: true),
+      ApiDocParam(name: 'name', description: 'Display name', required: true),
+      ApiDocParam(name: 'desc', description: 'Description'),
+      ApiDocParam(name: 'pkg_file', description: 'ZIP package file'),
+    ],
+    runnableInExplorer: false,
+  ),
+  ApiDocEndpoint(
+    group: 'eMApps',
+    route: '/emapps/api/pkg/info',
+    method: ApiDocMethod.post,
+    summary: 'Developer package info',
+    description:
+        'Developer eMApps route. Requires X-Dev-Token and returns package metadata for the current developer.',
+    params: [
+      ApiDocParam(name: 'app_id', description: 'eMApp appId', required: true),
+    ],
+    runnableInExplorer: false,
+  ),
+  ApiDocEndpoint(
+    group: 'eMApps',
+    route: '/emapps/api/pkg/list',
+    method: ApiDocMethod.post,
+    summary: 'Developer package list',
+    description:
+        'Developer eMApps route. Requires X-Dev-Token and lists packages uploaded by the current developer.',
+    runnableInExplorer: false,
+  ),
+  ApiDocEndpoint(
+    group: 'eMApps',
+    route: '/emapps/api/pkg/pubkey',
+    method: ApiDocMethod.post,
+    summary: 'Developer public key',
+    description:
+        'Developer eMApps route. Returns the same RSA public key as /emapps/public/key.',
+    runnableInExplorer: false,
+  ),
+  ApiDocEndpoint(
+    group: 'eMApps',
+    route: '/emapps/internal/approve',
+    method: ApiDocMethod.post,
+    summary: 'Approve EMA callback',
+    description:
+        'Internal eMApps route. ACOP calls this after admin approval. Requires X-Bot-Secret.',
+    params: [
+      ApiDocParam(
+        name: 'file_name',
+        description: 'EMA file name',
+        required: true,
+      ),
+      ApiDocParam(
+        name: 'content',
+        description: 'EMA JSON string',
+        required: true,
+      ),
+      ApiDocParam(name: 'source_id', description: 'ACOP review source id'),
+    ],
+    runnableInExplorer: false,
+  ),
+  ApiDocEndpoint(
+    group: 'eMApps',
+    route: '/healthz',
+    method: ApiDocMethod.get,
+    summary: 'eMApps health check',
+    description:
+        'Health check route for the eMApps service. Use the eMApps server address.',
+    runnableInExplorer: false,
+  ),
+  ApiDocEndpoint(
     group: 'Utility',
     route: 'utils/upload_image',
     method: ApiDocMethod.post,
@@ -3496,6 +3778,15 @@ const _urlSchemeDocEntries = <_UrlSchemeDocEntry>[
     titleKey: 'Open notices',
     descriptionKey: 'Opens the notifications page.',
     examples: ['$csacDeepLinkScheme://notices'],
+  ),
+  _UrlSchemeDocEntry(
+    titleKey: 'Open eMApps',
+    descriptionKey: 'Opens the eMApps catalog or a specific eMApp by appId.',
+    examples: [
+      '$csacDeepLinkScheme://emapps',
+      '$csacDeepLinkScheme://emapp/com.csac.test',
+      '$csacDeepLinkScheme://apps?app_id=com.csac.test',
+    ],
   ),
   _UrlSchemeDocEntry(
     titleKey: 'Open profile and settings',
@@ -4118,6 +4409,13 @@ class _ApiEndpointDetail extends StatelessWidget {
                     color: colors.onSurfaceVariant,
                   ),
                 ),
+                if (!endpoint.runnableInExplorer) ...[
+                  const SizedBox(height: 8),
+                  Chip(
+                    avatar: const Icon(Icons.visibility_off_outlined, size: 18),
+                    label: Text(strings.text('Documentation only')),
+                  ),
+                ],
               ],
             ),
           ),
@@ -4168,7 +4466,9 @@ class _ApiEndpointDetail extends StatelessWidget {
                   alignment: MainAxisAlignment.end,
                   children: [
                     FilledButton.icon(
-                      onPressed: running ? null : onRun,
+                      onPressed: running || !endpoint.runnableInExplorer
+                          ? null
+                          : onRun,
                       icon: running
                           ? const SizedBox(
                               width: 18,
@@ -4176,7 +4476,13 @@ class _ApiEndpointDetail extends StatelessWidget {
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const Icon(Icons.play_arrow),
-                      label: Text(strings.text('Run request')),
+                      label: Text(
+                        strings.text(
+                          endpoint.runnableInExplorer
+                              ? 'Run request'
+                              : 'Documentation only',
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -4605,6 +4911,7 @@ class _SettingsGroupCard extends StatelessWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController serverUrl;
   late final TextEditingController acopServerUrl;
+  late final TextEditingController emAppsServerUrl;
   late final TextEditingController settingsSearch;
   late final ScrollController settingsScroll;
   final developerOptionsKey = GlobalKey();
@@ -4612,6 +4919,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool refreshing = false;
   bool savingServer = false;
   bool savingAcopServer = false;
+  bool savingEmAppsServer = false;
   bool loadingPerformanceStats = false;
   bool clearingPerformanceCaches = false;
   bool enablingLowPerformanceMode = false;
@@ -4654,6 +4962,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     acopServerUrl = TextEditingController(
       text: widget.state.preferences.acopServerUrl,
     );
+    emAppsServerUrl = TextEditingController(
+      text: widget.state.preferences.emAppsServerUrl,
+    );
     settingsSearch = TextEditingController()..addListener(handleSearchChanged);
     widget.state.addListener(handleStateChanged);
     developerOptionsExpanded = widget.initialDeveloperOptionsExpanded;
@@ -4681,6 +4992,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     settingsSearch.dispose();
     serverUrl.dispose();
     acopServerUrl.dispose();
+    emAppsServerUrl.dispose();
     settingsScroll.dispose();
     super.dispose();
   }
@@ -5484,6 +5796,59 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   void resetAcopServerUrl() {
     acopServerUrl.clear();
+  }
+
+  Future<void> saveEmAppsServerUrl() async {
+    setState(() => savingEmAppsServer = true);
+    try {
+      final changed = await widget.state.updateEmAppsServerUrl(
+        emAppsServerUrl.text,
+      );
+      if (!mounted) {
+        return;
+      }
+      emAppsServerUrl.text = widget.state.preferences.emAppsServerUrl;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            context.strings.text(
+              changed
+                  ? 'eMApps server address saved.'
+                  : 'Server address is unchanged.',
+            ),
+          ),
+        ),
+      );
+      setState(() {});
+    } on FormatException {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(context.strings.text('Invalid server address.')),
+        ),
+      );
+    } catch (err) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            context.strings.format('Save failed: {error}', {'error': err}),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => savingEmAppsServer = false);
+      }
+    }
+  }
+
+  void resetEmAppsServerUrl() {
+    emAppsServerUrl.clear();
   }
 
   Future<void> chooseClientMode(AppClientMode mode) async {
@@ -7191,6 +7556,88 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ],
                       ),
                       const SizedBox(height: 12),
+                      TextField(
+                        controller: emAppsServerUrl,
+                        keyboardType: TextInputType.url,
+                        textInputAction: TextInputAction.done,
+                        onSubmitted: (_) {
+                          if (!savingEmAppsServer) {
+                            saveEmAppsServerUrl();
+                          }
+                        },
+                        decoration: InputDecoration(
+                          labelText: strings.text('eMApps server address'),
+                          hintText: 'https://acop.csac.chat',
+                          helperText: strings.text(
+                            'Leave empty to use the default server.',
+                          ),
+                          border: const OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      OverflowBar(
+                        alignment: MainAxisAlignment.end,
+                        spacing: 12,
+                        overflowSpacing: 8,
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: savingEmAppsServer
+                                ? null
+                                : resetEmAppsServerUrl,
+                            icon: const Icon(Icons.restart_alt),
+                            label: Text(strings.text('Reset eMApps server')),
+                          ),
+                          FilledButton.icon(
+                            onPressed: savingEmAppsServer
+                                ? null
+                                : saveEmAppsServerUrl,
+                            icon: savingEmAppsServer
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.save_outlined),
+                            label: Text(strings.text('Apply eMApps server')),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        secondary: const Icon(Icons.terminal_outlined),
+                        title: Text(strings.text('eMApps debug logging')),
+                        subtitle: Text(
+                          strings.text(
+                            'Write eMApps runtime, HTTP, crypto and WebView logs for diagnostics.',
+                          ),
+                        ),
+                        value: widget.state.preferences.emAppsDebugLogging,
+                        onChanged: widget.state.updateEmAppsDebugLogging,
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.apps_outlined),
+                        title: Text(strings.text('eMApps cache and logs')),
+                        subtitle: Text(
+                          strings.text(
+                            'View logs or clear downloaded eMApps runtime files',
+                          ),
+                        ),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) =>
+                                  EmAppsLogScreen(state: widget.state),
+                            ),
+                          );
+                        },
+                      ),
+                      const Divider(height: 1),
                       ListTile(
                         contentPadding: EdgeInsets.zero,
                         leading: const Icon(Icons.api_outlined),

@@ -25,6 +25,7 @@ class _MainShellState extends State<MainShell> {
   bool selectedDraftConfirmSend = false;
   int selectedDraftRequestId = 0;
   int? selectedSpacePostId;
+  String? selectedEmAppId;
   String selectedSearchQuery = '';
   Timer? timer;
 
@@ -227,6 +228,10 @@ class _MainShellState extends State<MainShell> {
         return openDeepLinkSearch(target.query ?? '');
       case CsacDeepLinkAction.notices:
         return openDeepLinkTab(3);
+      case CsacDeepLinkAction.emApps:
+        return openDeepLinkEmApps();
+      case CsacDeepLinkAction.emApp:
+        return openDeepLinkEmApp(target.appId ?? '');
       case CsacDeepLinkAction.profile:
         return openDeepLinkTab(4);
       case CsacDeepLinkAction.userProfile:
@@ -399,6 +404,40 @@ class _MainShellState extends State<MainShell> {
     return true;
   }
 
+  bool openDeepLinkEmApp(String appId) {
+    final trimmed = appId.trim();
+    if (trimmed.isEmpty) {
+      return false;
+    }
+    if (MediaQuery.sizeOf(context).width >= 900) {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      setState(() => selectedEmAppId = trimmed);
+      selectDestination(5);
+      return true;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => EmAppDetailScreen(state: widget.state, appId: trimmed),
+      ),
+    );
+    return true;
+  }
+
+  bool openDeepLinkEmApps() {
+    if (MediaQuery.sizeOf(context).width >= 900) {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      setState(() => selectedEmAppId = null);
+      selectDestination(5);
+      return true;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => EmAppsScreen(state: widget.state),
+      ),
+    );
+    return true;
+  }
+
   Conversation? findConversation(ConversationType type, int id) {
     return widget.state.conversations
         .where(
@@ -425,7 +464,7 @@ class _MainShellState extends State<MainShell> {
     final unreadChats = totalUnreadChats();
     final noticeCount = widget.state.notificationCounts.total;
     final wide = MediaQuery.sizeOf(context).width >= 900;
-    final pages = <Widget>[
+    final mainPages = <Widget>[
       ConversationScreen(
         state: widget.state,
         navigatorKey: widget.navigatorKey,
@@ -461,6 +500,14 @@ class _MainShellState extends State<MainShell> {
       ),
       NoticeCenterScreen(state: widget.state),
       ProfileScreen(state: widget.state),
+    ];
+    final widePages = <Widget>[
+      ...mainPages,
+      EmAppsScreen(
+        state: widget.state,
+        embedded: true,
+        initialAppId: selectedEmAppId,
+      ),
     ];
     Widget shell;
     if (wide) {
@@ -513,6 +560,11 @@ class _MainShellState extends State<MainShell> {
                     label: Text(context.strings.text('Notices')),
                   ),
                   NavigationRailDestination(
+                    icon: const Icon(Icons.apps_outlined),
+                    selectedIcon: const Icon(Icons.apps),
+                    label: Text(context.strings.text('Apps')),
+                  ),
+                  NavigationRailDestination(
                     icon: const Icon(Icons.person_outline),
                     selectedIcon: const Icon(Icons.person),
                     label: Text(context.strings.text('Me')),
@@ -524,14 +576,14 @@ class _MainShellState extends State<MainShell> {
                 child: index == 0
                     ? _WideChatLayout(
                         state: widget.state,
-                        conversations: pages[0],
+                        conversations: widePages[0],
                         selectedConversation: selectedConversation,
                         focusMessageId: selectedFocusMessageId,
                         draftText: selectedDraftText,
                         confirmDraftSend: selectedDraftConfirmSend,
                         draftRequestId: selectedDraftRequestId,
                       )
-                    : pages[index],
+                    : widePages[index],
               ),
             ],
           ),
@@ -539,7 +591,7 @@ class _MainShellState extends State<MainShell> {
       );
     } else {
       shell = Scaffold(
-        body: _BottomTabSwitcher(index: index, children: pages),
+        body: _BottomTabSwitcher(index: index, children: mainPages),
         bottomNavigationBar: NavigationBar(
           selectedIndex: index,
           onDestinationSelected: selectDestination,
@@ -1234,6 +1286,8 @@ class _ConversationScreenState extends State<ConversationScreen> {
       case CsacDeepLinkAction.search:
       case CsacDeepLinkAction.searchResult:
       case CsacDeepLinkAction.notices:
+      case CsacDeepLinkAction.emApps:
+      case CsacDeepLinkAction.emApp:
       case CsacDeepLinkAction.profile:
       case CsacDeepLinkAction.groupChat:
       case CsacDeepLinkAction.privateChat:

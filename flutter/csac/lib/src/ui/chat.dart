@@ -2024,6 +2024,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       case CsacDeepLinkAction.search:
       case CsacDeepLinkAction.searchResult:
       case CsacDeepLinkAction.notices:
+      case CsacDeepLinkAction.emApps:
+      case CsacDeepLinkAction.emApp:
       case CsacDeepLinkAction.profile:
         return context
                 .findAncestorStateOfType<_CsacMobileAppState>()

@@ -53,6 +53,8 @@ class CsacPreferences {
     this.chatBackgroundPath = '',
     this.serverUrl = '',
     this.acopServerUrl = '',
+    this.emAppsServerUrl = '',
+    this.emAppsDebugLogging = false,
     this.showAcopBlockGeneratedCode = true,
     this.wrapAcopCodeEditorOnMobile = false,
     this.forceDesktopMobileWidth = false,
@@ -90,6 +92,8 @@ class CsacPreferences {
   static const _chatBackgroundPathKey = 'csac.chat_background_path';
   static const _serverUrlKey = 'csac.server_url';
   static const _acopServerUrlKey = 'csac.acop_server_url';
+  static const _emAppsServerUrlKey = 'csac.emapps.server_url';
+  static const _emAppsDebugLoggingKey = 'csac.emapps.debug_logging';
   static const _showAcopBlockGeneratedCodeKey =
       'csac.acop.block_editor.show_generated_code';
   static const _wrapAcopCodeEditorOnMobileKey =
@@ -130,6 +134,8 @@ class CsacPreferences {
   final String chatBackgroundPath;
   final String serverUrl;
   final String acopServerUrl;
+  final String emAppsServerUrl;
+  final bool emAppsDebugLogging;
   final bool showAcopBlockGeneratedCode;
   final bool wrapAcopCodeEditorOnMobile;
   final bool forceDesktopMobileWidth;
@@ -179,6 +185,8 @@ class CsacPreferences {
     String? chatBackgroundPath,
     String? serverUrl,
     String? acopServerUrl,
+    String? emAppsServerUrl,
+    bool? emAppsDebugLogging,
     bool? showAcopBlockGeneratedCode,
     bool? wrapAcopCodeEditorOnMobile,
     bool? forceDesktopMobileWidth,
@@ -220,6 +228,8 @@ class CsacPreferences {
       chatBackgroundPath: chatBackgroundPath ?? this.chatBackgroundPath,
       serverUrl: serverUrl ?? this.serverUrl,
       acopServerUrl: acopServerUrl ?? this.acopServerUrl,
+      emAppsServerUrl: emAppsServerUrl ?? this.emAppsServerUrl,
+      emAppsDebugLogging: emAppsDebugLogging ?? this.emAppsDebugLogging,
       showAcopBlockGeneratedCode:
           showAcopBlockGeneratedCode ?? this.showAcopBlockGeneratedCode,
       wrapAcopCodeEditorOnMobile:
@@ -286,6 +296,10 @@ class CsacPreferences {
       acopServerUrl: _acopServerUrlFromPrefs(
         prefs.getString(_acopServerUrlKey),
       ),
+      emAppsServerUrl: _emAppsServerUrlFromPrefs(
+        prefs.getString(_emAppsServerUrlKey),
+      ),
+      emAppsDebugLogging: prefs.getBool(_emAppsDebugLoggingKey) ?? false,
       showAcopBlockGeneratedCode:
           prefs.getBool(_showAcopBlockGeneratedCodeKey) ?? true,
       wrapAcopCodeEditorOnMobile:
@@ -368,6 +382,12 @@ class CsacPreferences {
     } else {
       await prefs.setString(_acopServerUrlKey, acopServerUrl.trim());
     }
+    if (emAppsServerUrl.trim().isEmpty) {
+      await prefs.remove(_emAppsServerUrlKey);
+    } else {
+      await prefs.setString(_emAppsServerUrlKey, emAppsServerUrl.trim());
+    }
+    await prefs.setBool(_emAppsDebugLoggingKey, emAppsDebugLogging);
     await prefs.setBool(
       _showAcopBlockGeneratedCodeKey,
       showAcopBlockGeneratedCode,
@@ -479,6 +499,19 @@ class CsacPreferences {
       'https://acop.csac.chat/acop/?route=',
     };
     return oldHosts.contains(normalized) ? '' : value;
+  }
+
+  static String _emAppsServerUrlFromPrefs(String? raw) {
+    final value = (raw ?? '').trim();
+    if (value.isEmpty) {
+      return '';
+    }
+    final normalized = value.toLowerCase().replaceAll(RegExp(r'/+$'), '');
+    const defaultHosts = <String>{
+      'https://acop.csac.chat',
+      'https://acop.csac.chat/emapps',
+    };
+    return defaultHosts.contains(normalized) ? '' : value;
   }
 
   static CsacLanguage _languageFromName(String? value) {

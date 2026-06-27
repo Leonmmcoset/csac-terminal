@@ -7,6 +7,8 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'api_client.dart';
 import 'acop_client.dart';
 import 'api_protocol.dart';
+import 'emapps_client.dart';
+import 'emapps_runtime.dart';
 import 'l10n.dart';
 import 'local_cache.dart';
 import 'models.dart';
@@ -54,10 +56,12 @@ class CsacAppState extends ChangeNotifier {
   CsacAppState({
     CsacApiClient? client,
     AcopApiClient? acopClient,
+    EmAppsClient? emAppsClient,
     CsacLocalCache? cache,
     CsacPreferences initialPreferences = const CsacPreferences(),
   }) : client = client ?? CsacApiClient(),
        acopClient = acopClient ?? AcopApiClient(),
+       emAppsClient = emAppsClient ?? EmAppsClient(),
        cache = cache ?? CsacLocalCache() {
     preferences = initialPreferences;
     restoreStatus = CsacStrings(
@@ -69,6 +73,7 @@ class CsacAppState extends ChangeNotifier {
 
   final CsacApiClient client;
   final AcopApiClient acopClient;
+  final EmAppsClient emAppsClient;
   final CsacLocalCache cache;
 
   CsacUser? user;
@@ -103,6 +108,13 @@ class CsacAppState extends ChangeNotifier {
       isAcopMode ? acopClient.baseUrl : client.baseUrl;
 
   bool get hasAcopDeveloper => acopDeveloper != null;
+
+  EmAppRuntime createEmAppRuntime() {
+    return EmAppRuntime(
+      client: emAppsClient,
+      persistLogs: preferences.emAppsDebugLogging,
+    );
+  }
 
   void _handleHttpProtocolChanged(ApiHttpProtocol protocol) {
     notifyListeners();
@@ -580,6 +592,12 @@ class CsacAppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> updateEmAppsDebugLogging(bool enabled) async {
+    preferences = preferences.copyWith(emAppsDebugLogging: enabled);
+    await preferences.save();
+    notifyListeners();
+  }
+
   Future<void> updateForceDesktopMobileWidth(bool enabled) async {
     if (preferences.forceDesktopMobileWidth == enabled) {
       return;
@@ -746,6 +764,24 @@ class CsacAppState extends ChangeNotifier {
     return true;
   }
 
+  Future<bool> updateEmAppsServerUrl(String value) async {
+    final normalizedUrl = value.trim().isEmpty
+        ? ''
+        : EmAppsClient.normalizeServerUrl(value);
+    final normalized = normalizedUrl == EmAppsClient.defaultBaseUrl
+        ? ''
+        : normalizedUrl;
+    if (normalized == preferences.emAppsServerUrl.trim()) {
+      await _applyPreferredServer();
+      return false;
+    }
+    preferences = preferences.copyWith(emAppsServerUrl: normalized);
+    await preferences.save();
+    await _applyPreferredServer();
+    notifyListeners();
+    return true;
+  }
+
   Future<void> _clearLocalSessionState({
     CsacUser? previousUser,
     String? previousServerUrl,
@@ -826,6 +862,7 @@ class CsacAppState extends ChangeNotifier {
   Future<void> _applyPreferredServer() async {
     client.setBaseUrl(preferences.serverUrl);
     acopClient.setBaseUrl(preferences.acopServerUrl);
+    emAppsClient.setBaseUrl(preferences.emAppsServerUrl);
   }
 
   Future<void> _restoreCsacSession() async {

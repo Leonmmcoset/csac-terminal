@@ -1788,6 +1788,10 @@ String _deepLinkTargetLabel(CsacStrings strings, CsacDeepLinkTarget target) {
       return strings.text('Search result');
     case CsacDeepLinkAction.notices:
       return strings.text('Notices');
+    case CsacDeepLinkAction.emApps:
+      return strings.text('eMApps');
+    case CsacDeepLinkAction.emApp:
+      return strings.text('eMApp');
     case CsacDeepLinkAction.profile:
       return strings.text('Profile');
     case CsacDeepLinkAction.userProfile:
@@ -1811,6 +1815,8 @@ String _deepLinkTargetIdentifier(
   switch (target.action) {
     case CsacDeepLinkAction.searchResult:
       return target.query ?? '';
+    case CsacDeepLinkAction.emApp:
+      return target.appId ?? '';
     case CsacDeepLinkAction.groupMessage:
     case CsacDeepLinkAction.privateMessage:
       return strings.format('Conversation {id} | Message {messageId}', {
@@ -1821,6 +1827,7 @@ String _deepLinkTargetIdentifier(
     case CsacDeepLinkAction.space:
     case CsacDeepLinkAction.search:
     case CsacDeepLinkAction.notices:
+    case CsacDeepLinkAction.emApps:
     case CsacDeepLinkAction.profile:
       return strings.text('No ID');
     case CsacDeepLinkAction.spacePost:
@@ -1845,6 +1852,9 @@ IconData _deepLinkTargetIcon(CsacDeepLinkAction action) {
       return Icons.manage_search_outlined;
     case CsacDeepLinkAction.notices:
       return Icons.notifications_none;
+    case CsacDeepLinkAction.emApps:
+    case CsacDeepLinkAction.emApp:
+      return Icons.apps_outlined;
     case CsacDeepLinkAction.profile:
     case CsacDeepLinkAction.userProfile:
       return Icons.person_outline;
